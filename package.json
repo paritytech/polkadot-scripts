@@ -1,0 +1,36 @@
+{
+	"name": "polkadot-election-score-stats",
+	"version": "0.1.0",
+	"description": "Simple script to obtain the latest election scores of Polkadot/Kusama validator set",
+	"main": "index.js",
+	"scripts": {
+		"dev": "./node_modules/.bin/nodemon --exec ./node_modules/.bin/ts-node ./src/index.ts",
+		"start": "./node_modules/.bin/ts-node ./src/index.ts",
+		"update": "././node_modules/.bin/ncu -u && yarn",
+		"lint": "eslint . --ext .ts --fix",
+		"build": "./node_modules/.bin/tsc --pretty"
+	},
+	"author": "@kianenigma",
+	"license": "ISC",
+	"devDependencies": {
+		"@babel/cli": "^7.14.8",
+		"@babel/core": "^7.14.8",
+		"@babel/preset-typescript": "^7.14.5",
+		"@types/node": "^16.4.5",
+		"@types/yargs": "^17.0.2",
+		"@typescript-eslint/eslint-plugin": "^4.28.5",
+		"@typescript-eslint/parser": "^4.28.5",
+		"eslint": "^7.31.0",
+		"nodemon": "^2.0.12",
+		"npm-check-updates": "11.8.3",
+		"ts-loader": "^9.2.4",
+		"ts-node": "^10.1.0",
+		"typescript": "4.3.5"
+	},
+	"dependencies": {
+		"@polkadot/api": "5.2.1",
+		"axios": "^0.21.1",
+		"bn.js": "^5.2.0",
+		"yargs": "^17.0.1"
+	}
+}
