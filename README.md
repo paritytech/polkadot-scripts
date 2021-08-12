@@ -1,3 +1,4 @@
-# polkadot-election-score-stats
+# polkadot-scripts
 
-Simple script to obtain the latest election scores of Polkadot/Kusama validator set.
+Scripts that I use to diagnose Polkadot/Kusama.
+
