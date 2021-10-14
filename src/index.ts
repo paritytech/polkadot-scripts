@@ -3,13 +3,17 @@ import axios from "axios";
 import BN from "bn.js"
 import yargs from 'yargs';
 import { hideBin } from "yargs/helpers"
+import { AccountId, Balance } from "@polkadot/types/interfaces/runtime"
+import { strict as assert } from 'assert'
+import { U64 } from "@polkadot/types";
+import { ACCOUNT_ID_PREFIX } from "@polkadot/types/ethereum/LookupSource";
 
 const optionsPromise = yargs(hideBin(process.argv))
 	.option('endpoint', {
 		alias: 'e',
 		type: 'string',
 		description: 'the wss endpoint. It must allow unsafe RPCs.',
-		required: true,
+		default: "wss://rpc.polkadot.io"
 	})
 	.argv
 
@@ -19,8 +23,7 @@ async function main() {
 	const api = await ApiPromise.create({ provider });
 	console.log(`Connected to node: ${options.endpoint} ${(await api.rpc.system.chain()).toHuman()} [ss58: ${api.registry.chainSS58}]`)
 
-	// @ts-ignore
-	await accountHistory(api)
+	await bagsListCheck(api)
 }
 
 main().catch(console.error).finally(() => process.exit());
@@ -60,16 +63,17 @@ async function nominatorThreshold(api: ApiPromise) {
 	console.log(`${n.filter(({ stash, stake }) => stake.lt(t)).length} stashes are below ${api.createType('Balance', t).toHuman()}`);
 }
 
-async function electionScoreStats() {
+async function electionScoreStats(_api: ApiPromise) {
 	const chain = "polkadot";
+	// @ts-ignore
 	const endpoint = chain === "polkadot" ? "wss://rpc.polkadot.io" : "wss://kusama-rpc.polkadot.io"
 	const provider = new WsProvider(endpoint);
 	const api = await ApiPromise.create({ provider });
 	console.log(`Connected to node: ${(await api.rpc.system.chain()).toHuman()} [ss58: ${api.registry.chainSS58}]`)
 
-	const key = process.env['API'];
+	const key = process.env['API'] || "DEFAULT_KEY";
 
-	const count = 50
+	const count = 30
 	const percent = new BN(50);
 
 	console.log(`using api key: ${key}`)
@@ -83,6 +87,7 @@ async function electionScoreStats() {
 		"address": "",
 	}, { headers: { "X-API-Key": key } })
 
+	// @ts-ignore
 	const exts = data.data.data.extrinsics.slice(0, count);
 	const scores = exts.map((e: any) => {
 		const parsed = JSON.parse(e.params);
@@ -100,8 +105,6 @@ async function electionScoreStats() {
 	avg[1] = avg[1].div(new BN(count))
 	avg[2] = avg[2].div(new BN(count))
 
-	console.log(avg);
-
 	console.log(`--- averages`)
 	console.log(`${avg[0].toString()}, ${api.createType('Balance', avg[0]).toHuman()}`);
 	console.log(`${avg[1].toString()}, ${api.createType('Balance', avg[1]).toHuman()}`);
@@ -115,5 +118,71 @@ async function electionScoreStats() {
 	console.log(`${avg[0].toString()}, ${api.createType('Balance', avg[0]).toHuman()}`);
 	console.log(`${avg[1].toString()}, ${api.createType('Balance', avg[1]).toHuman()}`);
 	console.log(`${avg[2].toString()}, ${api.createType('Balance', avg[2]).toHuman()}`);
+
+	console.log(`current minimum untrusted score is ${await api.query.electionProviderMultiPhase.minimumUntrustedScore()}`)
 }
 
+interface Bag {
+	head: AccountId,
+	tail: AccountId,
+	upper: Balance,
+	nodes: AccountId[],
+}
+
+async function bagsListCheck(api: ApiPromise) {
+	const entries = await api.query.bagsList.listBags.entries();
+	const bags: Bag[] = [];
+	const needRebag: AccountId[] = [];
+	const at = await api.rpc.chain.getFinalizedHead();
+	const finalizedApi = await api.at(at);
+	const bagThresholds = finalizedApi.consts.bagsList.bagThresholds.map((x) => api.createType('Balance', x));
+	entries.forEach(([key, bag]) => {
+		if (bag.isSome && bag.unwrap().head.isSome && bag.unwrap().tail.isSome) {
+			const head = bag.unwrap().head.unwrap();
+			const tail = bag.unwrap().tail.unwrap();
+			const keyData = key.toU8a();
+			// u64 is the last 8 bytes
+			const upper = api.createType('Balance', keyData.slice(-8));
+			assert(bagThresholds.findIndex((x) => x.eq(upper)) > -1, `upper ${upper} not found in ${bagThresholds}`);
+			bags.push({ head, tail, upper, nodes: [] })
+		}
+	});
+
+	bags.sort((a, b) => a.upper.cmp(b.upper));
+	let counter = 0;
+	for (const { head, tail, upper, nodes } of bags) {
+		// process the bag.
+		let current = head;
+		while (true) {
+			const currentNode = (await finalizedApi.query.bagsList.listNodes(current)).unwrap();
+			const currentAccount = currentNode.id;
+			const currentCtrl = (await finalizedApi.query.staking.bonded(currentAccount)).unwrap();
+			const currentWeight = api.createType('Balance', (await finalizedApi.query.staking.ledger(currentCtrl)).unwrapOrDefault().active);
+			const canonicalUpper = bagThresholds.find((t) => t.gt(currentWeight)) || api.createType('Balance', new BN("18446744073709551615"));
+			if (!canonicalUpper.eq(upper)) {
+				console.log(`\tℹ️  ${currentAccount} needs a rebag from ${upper.toHuman()} to ${canonicalUpper.toHuman()} [real weight = ${currentWeight.toHuman()}]`)
+				needRebag.push(currentAccount);
+			}
+			nodes.push(currentAccount);
+
+			if (currentNode.next.isSome) {
+				current = currentNode.next.unwrap()
+			} else {
+				break
+			}
+		}
+
+		assert.deepEqual(nodes[0], head);
+		assert.deepEqual(nodes[nodes.length - 1], tail, `last node ${nodes[nodes.length - 1]} not matching tail ${tail} in bag ${upper}`);
+		assert(head !== tail || nodes.length > 0)
+		counter += nodes.length;
+
+		console.log(`👜 Bag ${upper.toHuman()} - ${nodes.length} nodes: [${head} .. -> ${head !== tail? tail : ''}]`)
+	}
+
+	console.log(`total size: ${counter}`);
+	const counterOnchain = await finalizedApi.query.bagsList.counterForListNodes();
+	assert.deepEqual(counter, counterOnchain.toNumber());
+
+
+}
