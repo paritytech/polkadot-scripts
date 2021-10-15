@@ -1,12 +1,11 @@
-import { ApiPromise, WsProvider } from "@polkadot/api";
+import { ApiPromise, WsProvider, Keyring } from "@polkadot/api";
 import axios from "axios";
 import BN from "bn.js"
 import yargs from 'yargs';
 import { hideBin } from "yargs/helpers"
 import { AccountId, Balance } from "@polkadot/types/interfaces/runtime"
 import { strict as assert } from 'assert'
-import { U64 } from "@polkadot/types";
-import { ACCOUNT_ID_PREFIX } from "@polkadot/types/ethereum/LookupSource";
+import { readFileSync } from 'fs'
 
 const optionsPromise = yargs(hideBin(process.argv))
 	.option('endpoint', {
@@ -14,6 +13,12 @@ const optionsPromise = yargs(hideBin(process.argv))
 		type: 'string',
 		description: 'the wss endpoint. It must allow unsafe RPCs.',
 		default: "wss://rpc.polkadot.io"
+	})
+	.option('seed', {
+		alias: 's',
+		type: 'string',
+		description: 'path to a raw text file that contains your raw or mnemonic seed.',
+		required: false,
 	})
 	.argv
 
@@ -129,7 +134,61 @@ interface Bag {
 	nodes: AccountId[],
 }
 
+import { SubmittableExtrinsic } from "@polkadot/api/submittable/types"
+import { ISubmittableResult } from "@polkadot/types/types/"
+import { KeyringPair } from "@polkadot/keyring/types";
+import { EventRecord, } from "@polkadot/types/interfaces/";
+import { CodecHash } from "@polkadot/types/interfaces/runtime"
+
+interface ISubmitResult {
+	hash: CodecHash,
+	success: boolean,
+	included: EventRecord[],
+	finalized: EventRecord[],
+}
+
+async function sendAndFinalize(tx: SubmittableExtrinsic<"promise", ISubmittableResult>, account: KeyringPair): Promise<ISubmitResult> {
+	return new Promise(async resolve => {
+		let success = false;
+		let included: EventRecord[] = []
+		let finalized: EventRecord[] = []
+		const unsubscribe = await tx.signAndSend(account, ({ events = [], status, dispatchError }) => {
+			if (status.isInBlock) {
+				success = dispatchError ? false : true;
+				console.log(`📀 Transaction ${tx.meta.name}(..) included at blockHash ${status.asInBlock} [success = ${success}]`);
+				included = [...events]
+			} else if (status.isBroadcast) {
+				console.log(`🚀 Transaction broadcasted.`);
+			} else if (status.isFinalized) {
+				console.log(`💯 Transaction ${tx.meta.name}(..) Finalized at blockHash ${status.asFinalized}`);
+				finalized = [...events]
+				const hash = status.hash;
+				unsubscribe();
+				resolve({ success, hash, included, finalized })
+			} else if (status.isReady) {
+				// let's not be too noisy..
+			} else {
+				console.log(`🤷 Other status ${status}`)
+			}
+		})
+	})
+}
+
+async function dryRun(api: ApiPromise, account: KeyringPair, batch: SubmittableExtrinsic<"promise", ISubmittableResult>): Promise<boolean> {
+	const signed = await batch.signAsync(account);
+	const dryRun = await api.rpc.system.dryRun(signed.toHex());
+	console.log(`dry run of transaction => `, dryRun.toHuman())
+	return dryRun.isOk && dryRun.asOk.isOk
+}
+
 async function bagsListCheck(api: ApiPromise) {
+	// first load the account.
+	const keyring = new Keyring({ type: 'sr25519', ss58Format: api.registry.chainSS58 });
+	const seedPath = process.env["SEED_PATH"] || "DEFAULT_SEED";
+	const seed = readFileSync(seedPath).toString().trim();
+	const account = keyring.addFromUri(seed);
+	console.log(`📣 using account ${account.address}, info ${await api.query.system.account(account.address)}`)
+
 	const entries = await api.query.bagsList.listBags.entries();
 	const bags: Bag[] = [];
 	const needRebag: AccountId[] = [];
@@ -159,9 +218,16 @@ async function bagsListCheck(api: ApiPromise) {
 			const currentCtrl = (await finalizedApi.query.staking.bonded(currentAccount)).unwrap();
 			const currentWeight = api.createType('Balance', (await finalizedApi.query.staking.ledger(currentCtrl)).unwrapOrDefault().active);
 			const canonicalUpper = bagThresholds.find((t) => t.gt(currentWeight)) || api.createType('Balance', new BN("18446744073709551615"));
-			if (!canonicalUpper.eq(upper)) {
-				console.log(`\tℹ️  ${currentAccount} needs a rebag from ${upper.toHuman()} to ${canonicalUpper.toHuman()} [real weight = ${currentWeight.toHuman()}]`)
+			if (canonicalUpper.gt(upper)) {
+				console.log(`\t ☝️ ${currentAccount} needs a rebag from ${upper.toHuman()} to higher ${canonicalUpper.toHuman()} [real weight = ${currentWeight.toHuman()}]`)
 				needRebag.push(currentAccount);
+			} else if (canonicalUpper.lt(upper)) {
+				// this should never happen: we handle all rebags to lower accounts, except if a
+				// slash happens.
+				console.log(`\t 👇 ☢️ ${currentAccount} needs a rebag from ${upper.toHuman()} to lower ${canonicalUpper.toHuman()} [real weight = ${currentWeight.toHuman()}]`)
+				needRebag.push(currentAccount);
+			} else {
+				// correct spot.
 			}
 			nodes.push(currentAccount);
 
@@ -184,5 +250,17 @@ async function bagsListCheck(api: ApiPromise) {
 	const counterOnchain = await finalizedApi.query.bagsList.counterForListNodes();
 	assert.deepEqual(counter, counterOnchain.toNumber());
 
+	const txsInner = needRebag.map((who) => api.tx.bagsList.rebag(who));
+	const tx = api.tx.utility.batchAll(txsInner);
+	const success = await dryRun(api, account, tx);
+	if (success) {
+		// const { success, included } = await sendAndFinalize(tx, account);
+		// console.log(`ℹ️ success = ${success}. Events =`)
+		// for (const ev of included) {
+		// 	process.stdout.write(`${ev.event.section}::${ev.event.method}`)
+		// }
+	} else {
+		console.log(`warn: dy-run failed.`)
+	}
 
 }
