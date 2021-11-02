@@ -7,9 +7,11 @@ import { ApiPromise, Keyring, WsProvider } from '@polkadot/api';
 import { KeyringPair } from "@polkadot/keyring/types";
 
 
+/// TODO: split this per command, it is causing annoyance.
 interface HandlerArgs {
 	ws: string;
 	sendTx?: boolean;
+	count?: number,
 	chain?: 'kusama' | 'polkadot'
 }
 
@@ -31,10 +33,14 @@ function getAccount(seedPath: string | undefined, ss58: number | undefined): Key
 	return keyring.addFromUri('//Alice');
 }
 
-export async function bags({ ws, sendTx }: HandlerArgs): Promise<void> {
+export async function bags({ ws, sendTx, count }: HandlerArgs): Promise<void> {
 	if (sendTx === undefined) {
 		throw 'sendTx must be a true or false'
 	}
+	if (count === undefined) {
+		count = -1
+	}
+
 
 	const provider = new WsProvider(ws);
 	const api = await ApiPromise.create({
@@ -43,12 +49,16 @@ export async function bags({ ws, sendTx }: HandlerArgs): Promise<void> {
 	console.log(`Connected to node: ${ws} ${(await api.rpc.system.chain()).toHuman()} [ss58: ${api.registry.chainSS58}]`)
 
 
-	const seedPath = process.env["SEED_PATH"] || "DEFAULT_SEED";
-	const account = sendTx ? getAccount(seedPath, api.registry.chainSS58) : getAccount(undefined, api.registry.chainSS58);
+	let account;
+	if (process.env["SEED_PATH"]) {
+		account = getAccount(process.env["SEED_PATH"], api.registry.chainSS58)
+	} else {
+		account = getAccount(undefined, api.registry.chainSS58);
+	}
 
 	console.log(`📣 using account ${account.address}, info ${await api.query.system.account(account.address)}`)
 
-	await bagsListCheck(api, account, sendTx);
+	await bagsListCheck(api, account, sendTx, count);
 }
 
 export async function nominatorThresh({ ws }: HandlerArgs): Promise<void> {

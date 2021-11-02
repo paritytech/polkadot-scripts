@@ -33,6 +33,13 @@ async function main() {
 						demandOption: false,
 						default: false,
 					},
+					count: {
+						alias: 'c',
+						description: 'How many rebag transactions to send. Iteration will stop if provided. All bags are iterated if  otherwise.',
+						number: true,
+						demandOption: false,
+						default: -1,
+					},
 				});
 			},
 			// @ts-ignore

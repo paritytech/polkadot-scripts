@@ -37,7 +37,7 @@ async function needsRebag(baseApi: ApiPromise, api: ApiDecoration<"promise">, ba
 	}
 }
 
-export async function bagsListCheck(api: ApiPromise, account: KeyringPair, sendTx: boolean): Promise<void> {
+export async function bagsListCheck(api: ApiPromise, account: KeyringPair, sendTx: boolean, count: number): Promise<void> {
 	let entries;
 	try {
 		entries = await api.query.bagsList.listBags.entries();
@@ -56,8 +56,7 @@ export async function bagsListCheck(api: ApiPromise, account: KeyringPair, sendT
 			const head = bag.unwrap().head.unwrap();
 			const tail = bag.unwrap().tail.unwrap();
 
-			// NOTE: I think this is cleaner then the above - we can extract the inner value of the key.
-			const keyInner = key.args[0]; // u64
+			const keyInner = key.args[0];
 			const upper = api.createType('Balance', keyInner.toBn());
 			assert(bagThresholds.findIndex((x) => x.eq(upper)) > -1, `upper ${upper} not found in ${bagThresholds}`);
 			bags.push({ head, tail, upper, nodes: [] })
@@ -89,6 +88,9 @@ export async function bagsListCheck(api: ApiPromise, account: KeyringPair, sendT
 		counter += nodes.length;
 
 		console.log(`👜 Bag ${upper.toHuman()} - ${nodes.length} nodes: [${head} .. -> ${head !== tail ? tail : ''}]`)
+		if (count > -1 && needsRebag.length > count) {
+			break
+		}
 	}
 
 	console.log(`total size: ${counter}`);
