@@ -8,7 +8,6 @@ import { bags, nominatorThresh, electionScore } from './handlers';
  *  ts-node ./src/index.ts bags -w wss://kusama-rpc.polkadot.io
  * ```
  */
-
 async function main() {
 	await yargs
 		.options({ // global options that apply to each command
@@ -32,6 +31,7 @@ async function main() {
 						description: 'Whether or not to send a rebag tx.',
 						boolean: true,
 						demandOption: false,
+						default: false,
 					},
 				});
 			},

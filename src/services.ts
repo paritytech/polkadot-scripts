@@ -4,16 +4,37 @@ import { ApiPromise, WsProvider } from "@polkadot/api";
 import { KeyringPair } from "@polkadot/keyring/types";
 
 import BN from "bn.js"
-import { AccountId, Balance } from "@polkadot/types/interfaces/runtime"
+import { AccountId, Balance, } from "@polkadot/types/interfaces/runtime"
+import { PalletBagsListListNode } from "@polkadot/types/lookup"
 import { strict as assert } from 'assert'
 import { dryRun, sendAndFinalize } from './helpers'
 import axios from "axios";
+import { ApiDecoration } from "@polkadot/api/types";
 
 interface Bag {
 	head: AccountId,
 	tail: AccountId,
 	upper: Balance,
 	nodes: AccountId[],
+}
+
+async function needsRebag(baseApi: ApiPromise, api: ApiDecoration<"promise">, bagThresholds: Balance[], currentUpper: Balance, node: PalletBagsListListNode): Promise<boolean> {
+	const currentAccount = node.id;
+	const currentCtrl = (await api.query.staking.bonded(currentAccount)).unwrap();
+	const currentWeight = baseApi.createType('Balance', (await api.query.staking.ledger(currentCtrl)).unwrapOrDefault().active);
+	const canonicalUpper = bagThresholds.find((t) => t.gt(currentWeight)) || baseApi.createType('Balance', new BN("18446744073709551615"));
+	if (canonicalUpper.gt(currentUpper)) {
+		console.log(`\t ☝️ ${currentAccount} needs a rebag from ${currentUpper.toHuman()} to higher ${canonicalUpper.toHuman()} [real weight = ${currentWeight.toHuman()}]`)
+		return true
+	} else if (canonicalUpper.lt(currentUpper)) {
+		// this should ALMOST never happen: we handle all rebags to lower accounts, except if a
+		// slash happens.
+		console.log(`\t 👇 ☢️ ${currentAccount} needs a rebag from ${currentUpper.toHuman()} to lower ${canonicalUpper.toHuman()} [real weight = ${currentWeight.toHuman()}]`)
+		return true
+	} else {
+		// correct spot.
+		return false
+	}
 }
 
 export async function bagsListCheck(api: ApiPromise, account: KeyringPair, sendTx: boolean): Promise<void> {
@@ -34,9 +55,6 @@ export async function bagsListCheck(api: ApiPromise, account: KeyringPair, sendT
 		if (bag.isSome && bag.unwrap().head.isSome && bag.unwrap().tail.isSome) {
 			const head = bag.unwrap().head.unwrap();
 			const tail = bag.unwrap().tail.unwrap();
-			// const keyData = key.toU8a();
-			// u64 is the last 8 bytes
-			// const upper = api.createType('Balance', keyData.slice(-8));
 
 			// NOTE: I think this is cleaner then the above - we can extract the inner value of the key.
 			const keyInner = key.args[0]; // u64
@@ -54,23 +72,10 @@ export async function bagsListCheck(api: ApiPromise, account: KeyringPair, sendT
 		let current = head;
 		while (true) {
 			const currentNode = (await finalizedApi.query.bagsList.listNodes(current)).unwrap();
-			const currentAccount = currentNode.id;
-			const currentCtrl = (await finalizedApi.query.staking.bonded(currentAccount)).unwrap();
-			const currentWeight = api.createType('Balance', (await finalizedApi.query.staking.ledger(currentCtrl)).unwrapOrDefault().active);
-			const canonicalUpper = bagThresholds.find((t) => t.gt(currentWeight)) || api.createType('Balance', new BN("18446744073709551615"));
-			if (canonicalUpper.gt(upper)) {
-				console.log(`\t ☝️ ${currentAccount} needs a rebag from ${upper.toHuman()} to higher ${canonicalUpper.toHuman()} [real weight = ${currentWeight.toHuman()}]`)
-				needRebag.push(currentAccount);
-			} else if (canonicalUpper.lt(upper)) {
-				// this should never happen: we handle all rebags to lower accounts, except if a
-				// slash happens.
-				console.log(`\t 👇 ☢️ ${currentAccount} needs a rebag from ${upper.toHuman()} to lower ${canonicalUpper.toHuman()} [real weight = ${currentWeight.toHuman()}]`)
-				needRebag.push(currentAccount);
-			} else {
-				// correct spot.
+			if (await needsRebag(api, finalizedApi, bagThresholds, upper, currentNode)) {
+				needRebag.push(currentNode.id);
 			}
-			nodes.push(currentAccount);
-
+			nodes.push(currentNode.id);
 			if (currentNode.next.isSome) {
 				current = currentNode.next.unwrap()
 			} else {

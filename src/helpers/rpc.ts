@@ -39,9 +39,11 @@ export async function sendAndFinalize(tx: SubmittableExtrinsic<"promise", ISubmi
 	})
 }
 
-export async function dryRun(api: ApiPromise, account: KeyringPair, batch: SubmittableExtrinsic<"promise", ISubmittableResult>): Promise<boolean> {
-	const signed = await batch.signAsync(account);
+export async function dryRun(api: ApiPromise, account: KeyringPair, tx: SubmittableExtrinsic<"promise", ISubmittableResult>): Promise<boolean> {
+	const signed = await tx.signAsync(account);
+	const info = await api.rpc.payment.queryInfo(signed.toHex());
 	const dryRun = await api.rpc.system.dryRun(signed.toHex());
-	console.log(`dry run of transaction => `, dryRun.toHuman())
+	console.log(`queryInfo of transaction => `, info.toHuman())
+	console.log(`dry-run of transaction => `, dryRun.toHuman())
 	return dryRun.isOk && dryRun.asOk.isOk
 }

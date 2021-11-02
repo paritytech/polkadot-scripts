@@ -32,7 +32,7 @@ function getAccount(seedPath: string | undefined, ss58: number | undefined): Key
 }
 
 export async function bags({ ws, sendTx }: HandlerArgs): Promise<void> {
-	if (!sendTx) {
+	if (sendTx === undefined) {
 		throw 'sendTx must be a true or false'
 	}
 
