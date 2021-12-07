@@ -5,6 +5,9 @@ import { bagsListCheck, nominatorThreshold, electionScoreStats } from './service
 import { readFileSync } from 'fs'
 import { ApiPromise, Keyring, WsProvider } from '@polkadot/api';
 import { KeyringPair } from "@polkadot/keyring/types";
+import { BN } from '@polkadot/util';
+import { SlashingSpans } from "@polkadot/types/interfaces/staking";
+import { Option } from "@polkadot/types/"
 
 
 /// TODO: split this per command, it is causing annoyance.
@@ -41,13 +44,11 @@ export async function bags({ ws, sendTx, count }: HandlerArgs): Promise<void> {
 		count = -1
 	}
 
-
 	const provider = new WsProvider(ws);
 	const api = await ApiPromise.create({
 		provider,
 	});
 	console.log(`Connected to node: ${ws} ${(await api.rpc.system.chain()).toHuman()} [ss58: ${api.registry.chainSS58}]`)
-
 
 	let account;
 	if (process.env["SEED_PATH"]) {
@@ -87,4 +88,41 @@ export async function electionScore({ chain }: HandlerArgs): Promise<void> {
 	console.log(`using api key: ${apiKey}`);
 
 	await electionScoreStats(chainLower, api, apiKey);
+}
+
+export async function playground({ ws }: HandlerArgs): Promise<void> {
+	const provider = new WsProvider(ws);
+	const api = await ApiPromise.create({provider});
+	console.log(`Connected to node: ${ws} ${(await api.rpc.system.chain()).toHuman()} [ss58: ${api.registry.chainSS58}]`)
+
+	const ED = new BN(10000000000);
+	const ledgers = await api.query.staking.ledger.entries();
+	let count = 0;
+	let stale = 0;
+
+	const transformSpan = (optSpans: Option<SlashingSpans>): number =>
+		optSpans.isNone
+			? 0
+			: optSpans.unwrap().prior.length + 1;
+
+	const toReap = [];
+	for (const [ctrl, ledger] of ledgers) {
+		const total = ledger.unwrapOrDefault().total;
+		count += 1;
+		if (total.toBn().lte(ED)) {
+			stale += 1;
+			toReap.push(ledger.unwrapOrDefault().stash);
+			console.log(`🚨 ${ctrl.args[0].toHuman()} has ledger ${api.createType('Balance', total).toHuman()}.`)
+		}
+	}
+
+
+	const tx = api.tx.utility.batchAll(
+		await Promise.all(toReap.map(async (s) => api.tx.staking.reapStash(
+			s,
+			transformSpan((await api.query.staking.slashingSpans(s))))
+		))
+	);
+
+	console.log(`${stale} / ${count} are stale`);
 }

@@ -1,5 +1,5 @@
 import yargs from 'yargs';
-import { bags, nominatorThresh, electionScore } from './handlers';
+import { bags, nominatorThresh, electionScore, playground } from './handlers';
 
 
 /**
@@ -42,7 +42,6 @@ async function main() {
 					},
 				});
 			},
-			// @ts-ignore
 			bags
 		)
 		// @ts-ignore
@@ -63,9 +62,10 @@ async function main() {
 					},
 				});
 			},
-			// @ts-ignore
 			electionScore
 		)
+		// @ts-ignore
+		.command(['playground'], 'random stuff', {}, playground)
 		.parse();
 }
 

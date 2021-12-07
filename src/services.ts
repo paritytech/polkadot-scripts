@@ -1,6 +1,6 @@
 // CLI commnad services. A service is the busniess logic of each CLI command.
 
-import { ApiPromise, WsProvider } from "@polkadot/api";
+import { ApiPromise } from "@polkadot/api";
 import { KeyringPair } from "@polkadot/keyring/types";
 
 import BN from "bn.js"
@@ -136,6 +136,7 @@ export async function electionScoreStats(chain: 'polkadot' | 'kusama', api: ApiP
 
 	const avg = [new BN(0), new BN(0), new BN(0)]
 	for (const score of scores) {
+		console.log(score);
 		avg[0] = avg[0].add(new BN(score[0]))
 		avg[1] = avg[1].add(new BN(score[1]))
 		avg[2] = avg[2].add(new BN(score[2]))
@@ -159,27 +160,7 @@ export async function electionScoreStats(chain: 'polkadot' | 'kusama', api: ApiP
 	console.log(`${avg[1].toString()}, ${api.createType('Balance', avg[1]).toHuman()}`);
 	console.log(`${avg[2].toString()}, ${api.createType('Balance', avg[2]).toHuman()}`);
 
-	console.log(`current minimum untrusted score is ${await api.query.electionProviderMultiPhase.minimumUntrustedScore()}`)
-}
-
-// TODO this isn't used
-export async function accountHistory(api: ApiPromise) {
-	const account = process.env['WHO'];
-	let now = await api.rpc.chain.getFinalizedHead();
-	let data = await api.query.system.account(account);
-
-	// @ts-ignore
-	while (true) {
-		const now_data = await api.query.system.account(account);
-		const header = await api.rpc.chain.getHeader(now);
-		const number = header.number;
-		if (now_data === data) {
-			console.log(`change detected at block ${number}`, now_data.toHuman())
-			data = now_data;
-		}
-
-		now = header.parentHash;
-	}
+	console.log(`current minimum untrusted score is ${(await api.query.electionProviderMultiPhase.minimumUntrustedScore()).unwrapOrDefault().map((x) => api.createType('Balance', x).toHuman())}`)
 }
 
 export async function nominatorThreshold(api: ApiPromise) {
