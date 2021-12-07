@@ -4,10 +4,12 @@
 import { bagsListCheck, nominatorThreshold, electionScoreStats } from './services';
 import { readFileSync } from 'fs'
 import { ApiPromise, Keyring, WsProvider } from '@polkadot/api';
+import { ApiDecoration } from '@polkadot/api/types';
 import { KeyringPair } from "@polkadot/keyring/types";
 import { BN } from '@polkadot/util';
 import { SlashingSpans } from "@polkadot/types/interfaces/staking";
-import { Option } from "@polkadot/types/"
+import { Option,  } from "@polkadot/types/"
+import { ACCOUNT_ID_PREFIX } from '@polkadot/types/ethereum/LookupSource';
 
 
 /// TODO: split this per command, it is causing annoyance.
@@ -90,7 +92,7 @@ export async function electionScore({ chain }: HandlerArgs): Promise<void> {
 	await electionScoreStats(chainLower, api, apiKey);
 }
 
-export async function playground({ ws }: HandlerArgs): Promise<void> {
+export async function reapStash({ ws }: HandlerArgs) {
 	const provider = new WsProvider(ws);
 	const api = await ApiPromise.create({provider});
 	console.log(`Connected to node: ${ws} ${(await api.rpc.system.chain()).toHuman()} [ss58: ${api.registry.chainSS58}]`)
@@ -125,4 +127,65 @@ export async function playground({ ws }: HandlerArgs): Promise<void> {
 	);
 
 	console.log(`${stale} / ${count} are stale`);
+}
+
+
+export async function binarySearchStorageChange<T>(
+	{ ws }: HandlerArgs,
+	low: BN,
+	high: BN,
+	targetValue: T,
+	getter: (api: ApiDecoration<"promise">) => Promise<T>,
+): Promise<void> {
+	const provider = new WsProvider(ws);
+	const api = await ApiPromise.create({provider});
+	console.log(`Connected to node: ${ws} ${(await api.rpc.system.chain()).toHuman()} [ss58: ${api.registry.chainSS58}]`)
+
+	// the assumption is that `getValue` at `high` will return `targetValue`. At some point in the
+	// past it was set, and we are looking for that block.
+
+	const getValueAt = async (nowNumber: BN) => {
+		const nowHash = await api.rpc.chain.getBlockHash(nowNumber);
+		const nowApi = await api.at(nowHash)
+		return await getter(nowApi);
+	};
+
+	while (true) {
+		const nowNumber = low.add(high.sub(low).div(new BN(2)));
+		console.log(`trying [${low} ${high}] => ${nowNumber}`)
+		const nowValue = await getValueAt(nowNumber);
+
+		if (nowValue === targetValue) {
+			high = nowNumber
+		} else {
+			low = nowNumber
+		}
+		if (low.sub(high).abs().lte(new BN(1))) { break }
+	}
+
+	console.log(`desired value @#${low} => ${await getValueAt(low)}`)
+	console.log(`desired value @#${high} => ${await getValueAt(high)}`)
+}
+
+
+export async function playground({ ws }: HandlerArgs): Promise<void> {
+	// example of how to do the binary search.
+	const targetValue = "0xffffffffffffffffffffffffffffffff";
+	// upper range.
+	const high = new BN(10412678)
+	// lower range
+	const low = new BN(0);
+	// what gives us the value of desire in a given block.
+	//
+	// This MUST have the same type as `targetValue`, and MUST BE COMPARABLE using `===` operator.
+	// Really easy to shoot yourself in the foot if you don't pay attention to this detail.
+	const getValue = async (api: ApiDecoration<"promise">) => {
+		const locks = await api.query.balances.locks("F2i6trfXqFknbgB3d9wcd1X98WWdLLktmFtK8Beud75bjTW");
+		// what we are looking for is the maximum lock
+		let maxLock = new BN(0);
+		locks.forEach((l)  => { if (l.amount.gt(maxLock)) { maxLock = l.amount } });
+		return maxLock.toJSON()
+	}
+
+	await binarySearchStorageChange( { ws }, low, high, targetValue, getValue);
 }

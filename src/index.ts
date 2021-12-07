@@ -1,5 +1,5 @@
 import yargs from 'yargs';
-import { bags, nominatorThresh, electionScore, playground } from './handlers';
+import { bags, nominatorThresh, electionScore, playground, reapStash } from './handlers';
 
 
 /**
@@ -66,6 +66,26 @@ async function main() {
 		)
 		// @ts-ignore
 		.command(['playground'], 'random stuff', {}, playground)
+		// @ts-ignore
+		.command(['reap-stash'], 'examine how many accounts can go through a reap-stash',
+			(yargs) => {
+				return yargs.options({
+					sendTx: {
+						alias: 'T',
+						description: 'Whether or not to send a rebag tx.',
+						boolean: true,
+						demandOption: false,
+						default: false,
+					},
+					count: {
+						alias: 'c',
+						description: 'How many rebag transactions to send. Iteration will stop if provided. All bags are iterated if  otherwise.',
+						number: true,
+						demandOption: false,
+						default: -1,
+					},
+				});
+			}, reapStash)
 		.parse();
 }
 
