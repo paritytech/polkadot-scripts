@@ -1,5 +1,3 @@
-// CLI commnad services. A service is the busniess logic of each CLI command.
-
 import { ApiPromise } from "@polkadot/api";
 import { KeyringPair } from "@polkadot/keyring/types";
 
@@ -7,8 +5,7 @@ import BN from "bn.js"
 import { AccountId, Balance, } from "@polkadot/types/interfaces/runtime"
 import { PalletBagsListListNode } from "@polkadot/types/lookup"
 import { strict as assert } from 'assert'
-import { dryRun, sendAndFinalize } from './helpers'
-import axios from "axios";
+import { dryRun, sendAndFinalize } from '../helpers'
 import { ApiDecoration } from "@polkadot/api/types";
 
 interface Bag {
@@ -111,70 +108,4 @@ export async function bagsListCheck(api: ApiPromise, account: KeyringPair, sendT
 	} else {
 		console.log("no rebag batch tx sent")
 	}
-}
-
-export async function electionScoreStats(chain: 'polkadot' | 'kusama', api: ApiPromise, apiKey: string) {
-	const count = 30
-	const percent = new BN(50);
-
-	const data = await axios.post(`https://${chain}.api.subscan.io/api/scan/extrinsics`, {
-		"row": count,
-		"page": 0,
-		"module": "electionprovidermultiphase",
-		"call": "submit_unsigned",
-		"signed": "all",
-		"no_params": false,
-		"address": "",
-	}, { headers: { "X-API-Key": apiKey } })
-
-	// @ts-ignore
-	const exts = data.data.data.extrinsics.slice(0, count);
-	const scores = exts.map((e: any) => {
-		const parsed = JSON.parse(e.params);
-		return parsed[0].value.score
-	})
-
-	const avg = [new BN(0), new BN(0), new BN(0)]
-	for (const score of scores) {
-		console.log(score);
-		avg[0] = avg[0].add(new BN(score[0]))
-		avg[1] = avg[1].add(new BN(score[1]))
-		avg[2] = avg[2].add(new BN(score[2]))
-	}
-
-	avg[0] = avg[0].div(new BN(count))
-	avg[1] = avg[1].div(new BN(count))
-	avg[2] = avg[2].div(new BN(count))
-
-	console.log(`--- averages`)
-	console.log(`${avg[0].toString()}, ${api.createType('Balance', avg[0]).toHuman()}`);
-	console.log(`${avg[1].toString()}, ${api.createType('Balance', avg[1]).toHuman()}`);
-	console.log(`${avg[2].toString()}, ${api.createType('Balance', avg[2]).toHuman()}`);
-
-	avg[0] = avg[0].mul(percent).div(new BN(100))
-	avg[1] = avg[1].mul(percent).div(new BN(100))
-	avg[2] = avg[2].mul(new BN(100).add(percent)).div(new BN(100))
-
-	console.log(`--- ${percent.toString()}% thereof:`)
-	console.log(`${avg[0].toString()}, ${api.createType('Balance', avg[0]).toHuman()}`);
-	console.log(`${avg[1].toString()}, ${api.createType('Balance', avg[1]).toHuman()}`);
-	console.log(`${avg[2].toString()}, ${api.createType('Balance', avg[2]).toHuman()}`);
-
-	console.log(`current minimum untrusted score is ${(await api.query.electionProviderMultiPhase.minimumUntrustedScore()).unwrapOrDefault().map((x) => api.createType('Balance', x).toHuman())}`)
-}
-
-export async function nominatorThreshold(api: ApiPromise) {
-	const DOT = 10000000000;
-	const t = new BN(DOT).mul(new BN(80));
-	const np = (await api.query.staking.nominators.entries()).map(async ([sk, _]) => {
-		const stash = sk.args[0]
-		// all nominators must have a controller
-		const c = (await api.query.staking.bonded(stash)).unwrap();
-		// all controllers must have ledger.
-		const stake = (await api.query.staking.ledger(c)).unwrap().total.toBn();
-		return { stash, stake }
-	});
-
-	const n = await Promise.all(np);
-	console.log(`${n.filter(({ stake }) => stake.lt(t)).length} stashes are below ${api.createType('Balance', t).toHuman()}`);
 }

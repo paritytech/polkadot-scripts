@@ -2,3 +2,4 @@ node_modules
 key
 build
 .vscode
+*.key

@@ -10,6 +10,7 @@
 		"plugin:@typescript-eslint/recommended"
 	],
 	"rules": {
+		"ban-ts-ignore": false,
 		"indent": [
 			"error",
 			"tab"

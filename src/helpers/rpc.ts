@@ -44,6 +44,6 @@ export async function dryRun(api: ApiPromise, account: KeyringPair, tx: Submitta
 	const info = await api.rpc.payment.queryInfo(signed.toHex());
 	const dryRun = await api.rpc.system.dryRun(signed.toHex());
 	console.log(`queryInfo of transaction => `, info.toHuman())
-	console.log(`dry-run of transaction => `, dryRun.toHuman())
+	console.log(`dry-run of transaction => `, dryRun.toString());
 	return dryRun.isOk && dryRun.asOk.isOk
 }

@@ -1,5 +1,5 @@
 import yargs from 'yargs';
-import { bags, nominatorThresh, electionScore, playground, reapStash } from './handlers';
+import { bagsHandler, electionScoreHandler, playgroundHandler, reapStashHandler, nominatorThreshHandler } from './handlers';
 
 
 /**
@@ -42,30 +42,17 @@ async function main() {
 					},
 				});
 			},
-			bags
+			bagsHandler
 		)
 		// @ts-ignore
-		.command(['noms-thresh'], 'Get number of stashes below threshold (needs improvement)', {}, nominatorThresh)
+		.command(['noms-thresh'], 'Get number of stashes below threshold (needs improvement)', {}, nominatorThreshHandler)
 		.command(
 			['election-score'],
 			'Get stats on recent election scores',
+			{},
 			// @ts-ignore
-			(yargs) => {
-				return yargs.options({
-					chain: {
-						alias: 'c',
-						description: 'Chain to check the election scores of',
-						string: true,
-						demandOption: false,
-						default: 'polkadot',
-						choices: ['polkadot', 'kusama']
-					},
-				});
-			},
-			electionScore
+			electionScoreHandler
 		)
-		// @ts-ignore
-		.command(['playground'], 'random stuff', {}, playground)
 		// @ts-ignore
 		.command(['reap-stash'], 'examine how many accounts can go through a reap-stash',
 			(yargs) => {
@@ -85,7 +72,10 @@ async function main() {
 						default: -1,
 					},
 				});
-			}, reapStash)
+			}, reapStashHandler
+		)
+		// @ts-ignore
+		.command(['playground'], 'random stuff', {}, playgroundHandler)
 		.parse();
 }
 
