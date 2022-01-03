@@ -90,9 +90,12 @@ export async function bagsListCheck(api: ApiPromise, account: KeyringPair, sendT
 		}
 	}
 
-	console.log(`total size: ${counter}`);
+	console.log(`📊 total count of nodes: ${counter}`);
+	console.log(`..of which ${needRebag.length} need a rebag`);
 	const counterOnchain = await finalizedApi.query.bagsList.counterForListNodes();
+	const nominatorsOnChain = await finalizedApi.query.staking.counterForNominators();
 	assert.deepEqual(counter, counterOnchain.toNumber());
+	assert.deepEqual(counter, nominatorsOnChain.toNumber());
 
 	const txsInner = needRebag.map((who) => api.tx.bagsList.rebag(who));
 	const tx = api.tx.utility.batchAll(txsInner);

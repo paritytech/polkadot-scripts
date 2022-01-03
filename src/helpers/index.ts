@@ -16,15 +16,15 @@ export async function getApi(ws: string): Promise<ApiPromise> {
 	return api
 }
 
-export function getAccount(seedPath: string | undefined, ss58: number | undefined): KeyringPair {
+export function getAccount(seedOrPath: string | undefined, ss58: number | undefined): KeyringPair {
 	const keyring = new Keyring({ type: 'sr25519', ss58Format: ss58});
-	if (seedPath) {
+	if (seedOrPath) {
 		let suriData;
 		try {
-			suriData = readFileSync(seedPath, 'utf-8').toString().trim();
+			suriData = readFileSync(seedOrPath, 'utf-8').toString().trim();
 		} catch (e) {
-			console.error('Suri file could not be opened');
-			throw e;
+			console.error('Seed path cannot be opened, treating it as seed data itself');
+			suriData = seedOrPath;
 		}
 
 		return keyring.addFromUri(suriData)
@@ -35,7 +35,7 @@ export function getAccount(seedPath: string | undefined, ss58: number | undefine
 }
 
 export async function getAccountFromEnvOrArgElseAlice(api: ApiPromise): Promise<KeyringPair> {
-	const account = getAccount(process.env["SEED_PATH"], api.registry.chainSS58);
+	const account = getAccount(process.env["SEED"], api.registry.chainSS58);
 	console.log(`📣 using account ${account.address}, info ${await api.query.system.account(account.address)}`)
 	return account;
 }
