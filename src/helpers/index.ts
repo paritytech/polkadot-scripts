@@ -18,6 +18,7 @@ export async function getApi(ws: string): Promise<ApiPromise> {
 
 export function getAccount(seedOrPath: string | undefined, ss58: number | undefined): KeyringPair {
 	const keyring = new Keyring({ type: 'sr25519', ss58Format: ss58});
+	console.log(`using seed or path: ${seedOrPath}`)
 	if (seedOrPath) {
 		let suriData;
 		try {
@@ -34,8 +35,8 @@ export function getAccount(seedOrPath: string | undefined, ss58: number | undefi
 	return keyring.addFromUri('//Alice');
 }
 
-export async function getAccountFromEnvOrArgElseAlice(api: ApiPromise): Promise<KeyringPair> {
-	const account = getAccount(process.env["SEED"], api.registry.chainSS58);
+export async function getAccountFromEnvOrArgElseAlice(api: ApiPromise, arg?: string): Promise<KeyringPair> {
+	const account = getAccount(arg || process.env["SEED"], api.registry.chainSS58);
 	console.log(`📣 using account ${account.address}, info ${await api.query.system.account(account.address)}`)
 	return account;
 }

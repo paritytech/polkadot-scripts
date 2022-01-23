@@ -1,5 +1,5 @@
 import yargs from 'yargs';
-import { bagsHandler, electionScoreHandler, playgroundHandler, reapStashHandler, nominatorThreshHandler } from './handlers';
+import { bagsHandler, electionScoreHandler, playgroundHandler, reapStashHandler, nominatorThreshHandler, chillOtherHandler } from './handlers';
 
 
 /**
@@ -19,13 +19,44 @@ async function main() {
 				demandOption: false,
 				global: true,
 			},
+			seed: {
+				alias: 's',
+				type: 'string',
+				description: 'path to a raw text file that contains your raw or mnemonic seed, or its content. Can also be provided using SEED env variable',
+				required: false,
+				global: true,
+			}
 		})
 		.command(
 			['bags'],
 			'check the bags list',
 			// @ts-ignore
 			(yargs) => {
-				return yargs.options({ // command specific options
+				return yargs.options({
+					sendTx: {
+						alias: 'T',
+						description: 'Whether or not to send a rebag tx.',
+						boolean: true,
+						demandOption: false,
+						default: false,
+					},
+					count: {
+						alias: 'c',
+						description: 'How many rebag transactions to send. Iteration will stop if provided. All bags are iterated if  otherwise.',
+						demandOption: false,
+						number: true,
+						default: -1,
+					},
+				});
+			},
+			bagsHandler
+		)
+		.command(
+			['chill-other'],
+			'check and try to submit the chill-other transaction to reduce staking nominators',
+			// @ts-ignore
+			(yargs) => {
+				return yargs.options({
 					sendTx: {
 						alias: 'T',
 						description: 'Whether or not to send a rebag tx.',
@@ -40,9 +71,13 @@ async function main() {
 						demandOption: false,
 						default: -1,
 					},
+					no_dry_run: {
+						boolean: true,
+						description: 'do not dry-run the command first. Advised not to set. Only set if you do not have access to local node with this RPC',
+					}
 				});
 			},
-			bagsHandler
+			chillOtherHandler
 		)
 		// @ts-ignore
 		.command(['noms-thresh'], 'Get number of stashes below threshold (needs improvement)', {}, nominatorThreshHandler)
