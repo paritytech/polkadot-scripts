@@ -60,6 +60,7 @@ export async function bagsListCheck(api: ApiPromise, account: KeyringPair, sendT
 		}
 	});
 
+	console.log(`🧾 collected a total of ${bags.length} active bags.`)
 	bags.sort((a, b) => a.upper.cmp(b.upper));
 
 	let counter = 0;
@@ -85,9 +86,6 @@ export async function bagsListCheck(api: ApiPromise, account: KeyringPair, sendT
 		counter += nodes.length;
 
 		console.log(`👜 Bag ${upper.toHuman()} - ${nodes.length} nodes: [${head} .. -> ${head !== tail ? tail : ''}]`)
-		if (count > -1 && needsRebag.length > count) {
-			break
-		}
 	}
 
 	console.log(`📊 total count of nodes: ${counter}`);
@@ -97,7 +95,7 @@ export async function bagsListCheck(api: ApiPromise, account: KeyringPair, sendT
 	assert.deepEqual(counter, counterOnchain.toNumber());
 	assert.deepEqual(counter, nominatorsOnChain.toNumber());
 
-	const txsInner = needRebag.map((who) => api.tx.bagsList.rebag(who));
+	const txsInner = needRebag.map((who) => api.tx.bagsList.rebag(who)).slice(count);
 	const tx = api.tx.utility.batchAll(txsInner);
 	const success = await dryRun(api, account, tx);
 	if (success && sendTx) {
