@@ -29,7 +29,7 @@ export async function chillOther(api: ApiPromise, account: KeyringPair, sendTx: 
 				process.stdout.write(`${ev.event.section}::${ev.event.method}`)
 			}
 		} else {
-			success ? console.log(`not sending anyting`) : console.log(`warn: dry-run failed. not submitting anything.`)
+			success ? console.log(`not sending anything`) : console.log(`warn: dry-run failed. not submitting anything.`)
 		}
 	}
 }
