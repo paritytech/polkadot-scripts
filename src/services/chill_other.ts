@@ -62,9 +62,11 @@ async function buildChillTxs(api: ApiPromise, threshold: BN, chillThreshold: Per
 	allNominators.sort((n1, n2) => n1.stake.cmp(n2.stake));
 	// filter those that are below
 	const toRemoveAll = allNominators.filter((n) => n.stake.lt(threshold));
-	const ejectedStake = toRemoveAll
-		.map(({ stake }) => stake)
-		.reduce((prev, current) => prev = current.add(prev));
+	const ejectedStake = toRemoveAll.length
+		? toRemoveAll
+			.map(({ stake }) => stake)
+			.reduce((prev, current) => prev = current.add(prev))
+		: new BN(0);
 
 	const maxNominators = (await api.query.staking.maxNominatorsCount()).unwrapOrDefault();
 	const minNominators = chillThreshold.mul(maxNominators).divn(100);
