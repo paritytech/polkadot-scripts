@@ -7,7 +7,7 @@ import { ISubmittableResult } from "@polkadot/types/types/"
 import BN from "bn.js";
 import { dryRun, sendAndFinalize } from "../helpers";
 
-export async function chillOther(api: ApiPromise, account: KeyringPair, sendTx: boolean, noDryRun?: boolean, limit?: number) {
+export async function chillOther(api: ApiPromise, account: KeyringPair, sendTx: boolean, noDryRun: boolean, limit?: number) {
 	const threshold = api.createType('Balance', (await api.query.staking.minNominatorBond())).toBn();
 	const chillThreshold = (await api.query.staking.chillThreshold()).unwrapOrDefault();
 	console.log(`📣 DOT threshold for chilling is ${api.createType('Balance', threshold).toHuman()}`);
@@ -29,7 +29,7 @@ export async function chillOther(api: ApiPromise, account: KeyringPair, sendTx: 
 				process.stdout.write(`${ev.event.section}::${ev.event.method}`)
 			}
 		} else {
-			console.log(`warn: dy-run failed. not submitting anything.`)
+			success ? console.log(`not sending anyting`) : console.log(`warn: dry-run failed. not submitting anything.`)
 		}
 	}
 }

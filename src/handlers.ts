@@ -36,6 +36,7 @@ export async function chillOtherHandler({ ws, sendTx, count, noDryRun, seed }: H
 	if (count === undefined) {
 		count = -1
 	}
+
 	if (noDryRun === undefined) {
 		noDryRun = false
 	}
