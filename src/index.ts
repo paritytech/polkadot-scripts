@@ -59,19 +59,19 @@ async function main() {
 				return yargs.options({
 					sendTx: {
 						alias: 'T',
-						description: 'Whether or not to send a rebag tx.',
+						description: 'Whether or not to send a chill other tx.',
 						boolean: true,
 						demandOption: false,
 						default: false,
 					},
 					count: {
 						alias: 'c',
-						description: 'How many rebag transactions to send. Iteration will stop if provided. All bags are iterated if  otherwise.',
+						description: 'Max amount of stakers to chill.',
 						number: true,
 						demandOption: false,
 						default: -1,
 					},
-					no_dry_run: {
+					noDryRun: {
 						boolean: true,
 						description: 'do not dry-run the command first. Advised not to set. Only set if you do not have access to local node with this RPC',
 					}
