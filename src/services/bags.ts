@@ -97,7 +97,7 @@ export async function bagsListCheck(api: ApiPromise, account: KeyringPair, sendT
 
 	const txsInner = needRebag.map((who) => api.tx.bagsList.rebag(who)).slice(count);
 	const tx = api.tx.utility.batchAll(txsInner);
-	const success = await dryRun(api, account, tx);
+	const [success, _] = await dryRun(api, account, tx);
 	if (success && sendTx) {
 		const { success, included } = await sendAndFinalize(tx, account);
 		console.log(`ℹ️ success = ${success}. Events =`)

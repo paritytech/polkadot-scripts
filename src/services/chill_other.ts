@@ -21,7 +21,7 @@ export async function chillOther(api: ApiPromise, account: KeyringPair, sendTx: 
 		const { success, included } = await sendAndFinalize(batch, account);
 		console.log(`ℹ️ success = ${success}. Events = ${included}`)
 	} else {
-		const success = await dryRun(api, account, batch);
+		const [success, _] = await dryRun(api, account, batch);
 		if (success && sendTx) {
 			const { success, included } = await sendAndFinalize(batch, account);
 			console.log(`ℹ️ success = ${success}. Events =`)

@@ -1,5 +1,5 @@
 import yargs from 'yargs';
-import { bagsHandler, electionScoreHandler, playgroundHandler, reapStashHandler, nominatorThreshHandler, chillOtherHandler } from './handlers';
+import { bagsHandler, electionScoreHandler, playgroundHandler, reapStashHandler, nominatorThreshHandler, chillOtherHandler, stateTrieMigrationHandler } from './handlers';
 
 
 /**
@@ -108,6 +108,28 @@ async function main() {
 					},
 				});
 			}, reapStashHandler
+		)
+		// @ts-ignore
+		.command(['state-trie-migration'], 'Try and submit transactions to migrate the state trie version. See https://github.com/paritytech/substrate/pull/10073. This can only work against a node that supports dry-run RPC.',
+			(yargs) => {
+				return yargs.options({
+					count: {
+						description: 'Total number of transactions to send. Unlimited if not set.',
+						number: true,
+						demandOption: false,
+					},
+					'item-limit': {
+						description: 'Number of items to try and migrate in each round',
+						number: true,
+						demandOption: true,
+					},
+					'size-limit': {
+						description: 'size of items to try and migrate in each round',
+						number: true,
+						demandOption: true,
+					},
+				});
+			}, stateTrieMigrationHandler
 		)
 		// @ts-ignore
 		.command(['playground'], 'random stuff', {}, playgroundHandler)

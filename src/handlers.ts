@@ -2,9 +2,12 @@
 // relevant services with them.
 
 import { bagsListCheck, nominatorThreshold, electionScoreStats } from './services';
-import { getAccountFromEnvOrArgElseAlice, getApi } from './helpers';
+import { getAccountFromEnvOrArgElseAlice, getApi, sendAndFinalize } from './helpers';
 import { reapStash } from './services/reap_stash';
 import { chillOther } from './services/chill_other';
+import { stat } from 'fs';
+import BN from 'bn.js';
+import { stateTrieMigration } from './services/state_trie_migration';
 
 
 /// TODO: split this per command, it is causing annoyance.
@@ -13,7 +16,10 @@ export interface HandlerArgs {
 	sendTx?: boolean;
 	count?: number,
 	noDryRun?: boolean,
-	seed?: string
+	seed?: string,
+
+	itemLimit?: number,
+	sizeLimit?: number,
 }
 
 export async function bagsHandler({ ws, sendTx, count, seed }: HandlerArgs): Promise<void> {
@@ -73,6 +79,17 @@ export async function reapStashHandler({ ws, sendTx, count, seed }: HandlerArgs)
 	await reapStash(api, account, sendTx, count);
 }
 
-export async function playgroundHandler({ ws }: HandlerArgs): Promise<void> {
+export async function stateTrieMigrationHandler({ ws, seed, count, itemLimit, sizeLimit }: HandlerArgs): Promise<void> {
+	if (itemLimit === undefined || sizeLimit === undefined) {
+		throw 'itemLimit and sizeLimit mut be set.'
+	}
+
+	const api = await getApi(ws);
+	const account = await getAccountFromEnvOrArgElseAlice(api, seed);
+
+	await stateTrieMigration(api, account, itemLimit, sizeLimit, count);
+}
+
+export async function playgroundHandler({ ws, seed }: HandlerArgs): Promise<void> {
 	return;
 }

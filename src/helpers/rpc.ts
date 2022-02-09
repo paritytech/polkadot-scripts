@@ -1,7 +1,7 @@
 import { SubmittableExtrinsic } from "@polkadot/api/submittable/types"
-import { ISubmittableResult } from "@polkadot/types/types/"
+import { ISubmittableResult, } from "@polkadot/types/types/"
 import { KeyringPair } from "@polkadot/keyring/types";
-import { EventRecord, } from "@polkadot/types/interfaces/";
+import { EventRecord, ApplyExtrinsicResult } from "@polkadot/types/interfaces/";
 import { CodecHash } from "@polkadot/types/interfaces/runtime"
 import { ApiPromise } from "@polkadot/api";
 
@@ -39,11 +39,9 @@ export async function sendAndFinalize(tx: SubmittableExtrinsic<"promise", ISubmi
 	})
 }
 
-export async function dryRun(api: ApiPromise, account: KeyringPair, tx: SubmittableExtrinsic<"promise", ISubmittableResult>): Promise<boolean> {
+export async function dryRun(api: ApiPromise, account: KeyringPair, tx: SubmittableExtrinsic<"promise", ISubmittableResult>): Promise<[boolean, ApplyExtrinsicResult]> {
 	const signed = await tx.signAsync(account);
 	const info = await api.rpc.payment.queryInfo(signed.toHex());
 	const dryRun = await api.rpc.system.dryRun(signed.toHex());
-	console.log(`queryInfo of transaction => `, info.toHuman())
-	console.log(`dry-run of transaction => `, dryRun.toString());
-	return dryRun.isOk && dryRun.asOk.isOk
+	return [dryRun.isOk && dryRun.asOk.isOk, dryRun]
 }
