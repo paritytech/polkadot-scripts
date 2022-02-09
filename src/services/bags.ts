@@ -95,10 +95,10 @@ export async function bagsListCheck(api: ApiPromise, account: KeyringPair, sendT
 	assert.deepEqual(counter, counterOnchain.toNumber());
 	assert.deepEqual(counter, nominatorsOnChain.toNumber());
 
-	const txsInner = needRebag.map((who) => api.tx.bagsList.rebag(who)).slice(count);
+	const txsInner = needRebag.map((who) => api.tx.bagsList.rebag(who)).slice(0, count);
 	const tx = api.tx.utility.batchAll(txsInner);
 	const [success, _] = await dryRun(api, account, tx);
-	if (success && sendTx) {
+	if (success && sendTx && txsInner.length) {
 		const { success, included } = await sendAndFinalize(tx, account);
 		console.log(`ℹ️ success = ${success}. Events =`)
 		for (const ev of included) {

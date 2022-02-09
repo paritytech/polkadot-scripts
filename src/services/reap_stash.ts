@@ -20,13 +20,16 @@ export async function reapStash(api: ApiPromise, account: KeyringPair, sendTx: b
 	for (const [ctrl, ledger] of ledgers) {
 		const total = ledger.unwrapOrDefault().total;
 		count += 1;
-		if (total.toBn().lte(ED)) {
+
+		if (total.unwrap().lt(ED)) {
 			stale += 1;
 			toReap.push(ledger.unwrapOrDefault().stash);
-			console.log(`🚨 ${ctrl.args[0] ? ctrl.args[0] : ctrl} has ledger ${api.createType('Balance', total).toHuman()}.`)
-			if (txCount > -1 && toReap.length > txCount) {
-				break
-			}
+			console.log(`🚨 ${ctrl.args[0] ? ctrl.args[0] : ctrl} is stale. ledger.total=${api.createType('Balance', total).toHuman()}.`)
+
+		}
+
+		if (txCount > -1 && stale >= txCount) {
+			break
 		}
 	}
 
@@ -38,7 +41,7 @@ export async function reapStash(api: ApiPromise, account: KeyringPair, sendTx: b
 	);
 
 
-	console.log(`${stale} / ${count} are stale`);
+	console.log(`${stale} (stale) / ${count} (total examined)`);
 
 	const [success, _] = await dryRun(api, account, tx);
 	if (success && sendTx) {

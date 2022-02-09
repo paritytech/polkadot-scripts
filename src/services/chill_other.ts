@@ -7,7 +7,7 @@ import { ISubmittableResult } from "@polkadot/types/types/"
 import BN from "bn.js";
 import { dryRun, sendAndFinalize } from "../helpers";
 
-export async function chillOther(api: ApiPromise, account: KeyringPair, sendTx: boolean, noDryRun?: boolean, limit?: number) {
+export async function chillOther(api: ApiPromise, account: KeyringPair, sendTx: boolean, noDryRun: boolean, limit?: number) {
 	const threshold = api.createType('Balance', (await api.query.staking.minNominatorBond())).toBn();
 	const chillThreshold = (await api.query.staking.chillThreshold()).unwrapOrDefault();
 	console.log(`📣 DOT threshold for chilling is ${api.createType('Balance', threshold).toHuman()}`);
@@ -29,7 +29,7 @@ export async function chillOther(api: ApiPromise, account: KeyringPair, sendTx: 
 				process.stdout.write(`${ev.event.section}::${ev.event.method}`)
 			}
 		} else {
-			console.log(`warn: dy-run failed. not submitting anything.`)
+			success ? console.log(`not sending anything`) : console.log(`warn: dry-run failed. not submitting anything.`)
 		}
 	}
 }
@@ -62,9 +62,11 @@ async function buildChillTxs(api: ApiPromise, threshold: BN, chillThreshold: Per
 	allNominators.sort((n1, n2) => n1.stake.cmp(n2.stake));
 	// filter those that are below
 	const toRemoveAll = allNominators.filter((n) => n.stake.lt(threshold));
-	const ejectedStake = toRemoveAll
-		.map(({ stake }) => stake)
-		.reduce((prev, current) => prev = current.add(prev));
+	const ejectedStake = toRemoveAll.length
+		? toRemoveAll
+			.map(({ stake }) => stake)
+			.reduce((prev, current) => prev = current.add(prev))
+		: new BN(0);
 
 	const maxNominators = (await api.query.staking.maxNominatorsCount()).unwrapOrDefault();
 	const minNominators = chillThreshold.mul(maxNominators).divn(100);
