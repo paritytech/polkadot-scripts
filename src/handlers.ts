@@ -1,13 +1,13 @@
 // CLI command handlers. Responsible for gather all command inputs and calling the
 // relevant services with them.
 
-import { bagsListCheck, nominatorThreshold, electionScoreStats } from './services';
-import { getAccountFromEnvOrArgElseAlice, getApi, sendAndFinalize } from './helpers';
+import { bagsListCheck, nominatorThreshold, electionScoreStats, stakingStats } from './services';
+import { getAccountFromEnvOrArgElseAlice, getApi } from './helpers';
 import { reapStash } from './services/reap_stash';
 import { chillOther } from './services/chill_other';
-import { stat } from 'fs';
-import BN from 'bn.js';
 import { stateTrieMigration } from './services/state_trie_migration';
+import "@polkadot/api-augment"
+import "@polkadot/types-augment"
 
 
 /// TODO: split this per command, it is causing annoyance.
@@ -45,6 +45,7 @@ export async function chillOtherHandler({ ws, sendTx, count, noDryRun, seed }: H
 	if (noDryRun === undefined) {
 		noDryRun = false
 	}
+
 
 	const api = await getApi(ws);
 	const account = await getAccountFromEnvOrArgElseAlice(api, seed)
@@ -90,6 +91,9 @@ export async function stateTrieMigrationHandler({ ws, seed, count, itemLimit, si
 	await stateTrieMigration(api, account, itemLimit, sizeLimit, count);
 }
 
-export async function playgroundHandler({ ws, seed }: HandlerArgs): Promise<void> {
-	return;
+export async function stakingStatsHandler({ws}: HandlerArgs): Promise<void> {
+	const api = await getApi(ws);
+	await stakingStats(api)
 }
+
+export async function playgroundHandler({ ws }: HandlerArgs): Promise<void> {}

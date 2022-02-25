@@ -22,8 +22,8 @@ export async function stateTrieMigration(api: ApiPromise, account: KeyringPair, 
 	async function tryWithBackOff() {
 		let div = 1;
 		while (true) {
-			let limits = { item: itemLimit / div, size: sizeLimit };
-			let sizeUpperLimit = sizeLimit * 2;
+			const limits = { item: itemLimit / div, size: sizeLimit };
+			const sizeUpperLimit = sizeLimit * 2;
 			const currentTask = await api.query.stateTrieMigration.migrationProcess();
 			// we hope this won't fail, but it might.
 			const tx = api.tx.stateTrieMigration.continueMigrate(limits, sizeUpperLimit, currentTask);

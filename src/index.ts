@@ -1,5 +1,5 @@
 import yargs from 'yargs';
-import { bagsHandler, electionScoreHandler, playgroundHandler, reapStashHandler, nominatorThreshHandler, chillOtherHandler, stateTrieMigrationHandler } from './handlers';
+import { bagsHandler, electionScoreHandler, playgroundHandler, reapStashHandler, nominatorThreshHandler, chillOtherHandler, stateTrieMigrationHandler, stakingStatsHandler } from './handlers';
 
 
 /**
@@ -81,6 +81,8 @@ async function main() {
 		)
 		// @ts-ignore
 		.command(['noms-thresh'], 'Get number of stashes below threshold (needs improvement)', {}, nominatorThreshHandler)
+		// @ts-ignore
+		.command(['staking-stats'], 'Basic statistics of the staking limits', {}, stakingStatsHandler)
 		.command(
 			['election-score'],
 			'Get stats on recent election scores',
