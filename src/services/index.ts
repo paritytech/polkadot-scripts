@@ -4,7 +4,7 @@ export * from "./election_score_stats"
 import { ApiPromise } from "@polkadot/api";
 import BN from 'bn.js';
 import { AccountId32 } from '@polkadot/types/interfaces';
-import { Compact, u128 } from '@polkadot/types-codec';
+import {  PalletStakingIndividualExposure } from '@polkadot/types/lookup'
 
 export async function nominatorThreshold(api: ApiPromise) {
 	const DOT = 10000000000;
@@ -30,15 +30,10 @@ export async function stakingStats(api: ApiPromise) {
 	const currentEra = (await api.query.staking.currentEra()).unwrap();
 	const stakers = await api.query.staking.erasStakers.entries(currentEra);
 	stakers.map((x) => x[1].others).flat(1).forEach((x) => {
-		// @ts-ignore
-		const nominator: AccountId32 = x.who;
-		// @ts-ignore
-		const amount: Compact<u128> = x.value;
-		if (assignments.get(nominator)) {
-			assignments.set(nominator, amount.toBn().add(assignments.get(nominator)!))
-		} else {
-			assignments.set(nominator, amount.toBn())
-		}
+		const nominator = (x as PalletStakingIndividualExposure).who;
+		const amount = (x as PalletStakingIndividualExposure).value;
+		const val = assignments.get(nominator)
+		assignments.set(nominator, val ? amount.toBn().add(val) : amount.toBn())
 	})
 
 	// nominator stake
