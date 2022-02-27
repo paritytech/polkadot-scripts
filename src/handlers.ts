@@ -96,4 +96,7 @@ export async function stakingStatsHandler({ws}: HandlerArgs): Promise<void> {
 	await stakingStats(api)
 }
 
-export async function playgroundHandler({ ws }: HandlerArgs): Promise<void> {}
+export async function playgroundHandler({ ws }: HandlerArgs): Promise<void> {
+	// temp fix for the empty function
+	console.log(ws)
+}

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 import { ApiPromise } from "@polkadot/api";
 import BN from "bn.js"
 import axios from "axios";
@@ -18,6 +19,7 @@ export async function electionScoreStats(chain: string, api: ApiPromise, apiKey:
 
 	// @ts-ignore
 	const exts = data.data.data.extrinsics.slice(0, count);
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const scores = exts.map((e: any) => {
 		const parsed = JSON.parse(e.params);
 		return parsed[0].value.score

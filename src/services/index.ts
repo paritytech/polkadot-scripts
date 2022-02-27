@@ -9,7 +9,7 @@ import {  PalletStakingIndividualExposure } from '@polkadot/types/lookup'
 export async function nominatorThreshold(api: ApiPromise) {
 	const DOT = 10000000000;
 	const t = new BN(DOT).mul(new BN(140));
-	const np = (await api.query.staking.nominators.entries()).map(async ([sk, _]) => {
+	const np = (await api.query.staking.nominators.entries()).map(async ([sk]) => {
 		const stash = sk.args[0]
 		// all nominators must have a controller
 		const c = (await api.query.staking.bonded(stash)).unwrap();

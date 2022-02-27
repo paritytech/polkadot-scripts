@@ -43,7 +43,7 @@ export async function reapStash(api: ApiPromise, account: KeyringPair, sendTx: b
 
 	console.log(`${stale} (stale) / ${count} (total examined)`);
 
-	const [success, _] = await dryRun(api, account, tx);
+	const [success] = await dryRun(api, account, tx);
 	if (success && sendTx) {
 		const { success, included } = await sendAndFinalize(tx, account);
 		console.log(`ℹ️ success = ${success}. Events =`)

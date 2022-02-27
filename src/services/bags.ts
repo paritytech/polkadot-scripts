@@ -67,7 +67,8 @@ export async function bagsListCheck(api: ApiPromise, account: KeyringPair, sendT
 	for (const { head, tail, upper, nodes } of bags) {
 		// process the bag.
 		let current = head;
-		while (true) {
+		let cond = true
+		while (cond) {
 			const currentNode = (await finalizedApi.query.bagsList.listNodes(current)).unwrap();
 			if (await needsRebag(api, finalizedApi, bagThresholds, upper, currentNode)) {
 				needRebag.push(currentNode.id);
@@ -76,7 +77,7 @@ export async function bagsListCheck(api: ApiPromise, account: KeyringPair, sendT
 			if (currentNode.next.isSome) {
 				current = currentNode.next.unwrap()
 			} else {
-				break
+				cond = false
 			}
 		}
 
@@ -97,7 +98,7 @@ export async function bagsListCheck(api: ApiPromise, account: KeyringPair, sendT
 
 	const txsInner = needRebag.map((who) => api.tx.bagsList.rebag(who)).slice(0, count);
 	const tx = api.tx.utility.batchAll(txsInner);
-	const [success, _] = await dryRun(api, account, tx);
+	const [success] = await dryRun(api, account, tx);
 	if (success && sendTx && txsInner.length) {
 		const { success, included } = await sendAndFinalize(tx, account);
 		console.log(`ℹ️ success = ${success}. Events =`)
