@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 import { Option,  } from "@polkadot/types/"
 import { ApiPromise } from "@polkadot/api";
 import { dryRun, sendAndFinalize } from "../helpers";
@@ -21,7 +22,8 @@ export async function stateTrieMigration(api: ApiPromise, account: KeyringPair, 
 
 	async function tryWithBackOff() {
 		let div = 1;
-		while (true) {
+		let repeat = true
+		while (repeat) {
 			const limits = { item: itemLimit / div, size: sizeLimit };
 			const sizeUpperLimit = sizeLimit * 2;
 			const currentTask = await api.query.stateTrieMigration.migrationProcess();
@@ -36,7 +38,7 @@ export async function stateTrieMigration(api: ApiPromise, account: KeyringPair, 
 					submitResult.included
 						.filter((e) => e.event.method.toLowerCase().includes("migrate"))
 						.forEach((e) => console.log(`\t🎤 ${e.event.toString()}`));
-					break;
+					repeat = false;
 				} else {
 					console.log(`despite Dry-running, transaction failed. Aborting`);
 					throw "Can't even migrate one storage key. This probably means that this transaction failed to pass relay chain PoV limit. Script needs to run again with different params. Aborting";
@@ -63,7 +65,7 @@ export async function stateTrieMigration(api: ApiPromise, account: KeyringPair, 
 		}
 	}
 
-	function isFinished(task: any): boolean {
+	function isFinished(task: unknown): boolean {
 		// @ts-ignore
 		const currentTop: Option<Uint8Array> = task["currentTop"];
 		// @ts-ignore

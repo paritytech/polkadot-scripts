@@ -13,11 +13,11 @@ interface ISubmitResult {
 }
 
 export async function sendAndFinalize(tx: SubmittableExtrinsic<"promise", ISubmittableResult>, account: KeyringPair): Promise<ISubmitResult> {
-	return new Promise(async resolve => {
+	return new Promise(resolve => {
 		let success = false;
 		let included: EventRecord[] = []
 		let finalized: EventRecord[] = []
-		const unsubscribe = await tx.signAndSend(account, ({ events = [], status, dispatchError }) => {
+		tx.signAndSend(account, ({ events = [], status, dispatchError }) => {
 			if (status.isInBlock) {
 				success = dispatchError ? false : true;
 				console.log(`📀 Transaction ${tx.meta.name}(..) included at blockHash ${status.asInBlock} [success = ${success}]`);
@@ -28,7 +28,6 @@ export async function sendAndFinalize(tx: SubmittableExtrinsic<"promise", ISubmi
 				console.log(`💯 Transaction ${tx.meta.name}(..) Finalized at blockHash ${status.asFinalized}`);
 				finalized = [...events]
 				const hash = status.hash;
-				unsubscribe();
 				resolve({ success, hash, included, finalized })
 			} else if (status.isReady) {
 				// let's not be too noisy..
@@ -41,7 +40,6 @@ export async function sendAndFinalize(tx: SubmittableExtrinsic<"promise", ISubmi
 
 export async function dryRun(api: ApiPromise, account: KeyringPair, tx: SubmittableExtrinsic<"promise", ISubmittableResult>): Promise<[boolean, ApplyExtrinsicResult]> {
 	const signed = await tx.signAsync(account);
-	const info = await api.rpc.payment.queryInfo(signed.toHex());
 	const dryRun = await api.rpc.system.dryRun(signed.toHex());
 	return [dryRun.isOk && dryRun.asOk.isOk, dryRun]
 }

@@ -83,7 +83,8 @@ export async function binarySearchStorageChange<T>(
 		return await getter(nowApi);
 	};
 
-	while (true) {
+	let cond = true
+	while (cond) {
 		const nowNumber = low.add(high.sub(low).div(new BN(2)));
 		console.log(`trying [${low} ${high}] => ${nowNumber}`)
 		const nowValue = await getValueAt(nowNumber);
@@ -93,7 +94,7 @@ export async function binarySearchStorageChange<T>(
 		} else {
 			low = nowNumber
 		}
-		if (low.sub(high).abs().lte(new BN(1))) { break }
+		if (low.sub(high).abs().lte(new BN(1))) { cond = false }
 	}
 
 	console.log(`desired value @#${low} => ${await getValueAt(low)}`)
