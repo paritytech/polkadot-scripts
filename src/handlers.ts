@@ -91,9 +91,12 @@ export async function stateTrieMigrationHandler({ ws, seed, count, itemLimit, si
 	await stateTrieMigration(api, account, itemLimit, sizeLimit, count);
 }
 
-export async function stakingStatsHandler({ws}: HandlerArgs): Promise<void> {
-	const api = await getApi(ws);
-	await stakingStats(api)
+export async function stakingStatsHandler(args: HandlerArgs): Promise<void> {
+	const api = await getApi(args.ws);
+	await stakingStats(api);
+	// lastly, for the sake of completeness, call into the service that fetches the election score
+	// medians.
+	await electionScoreHandler(args);
 }
 
 export async function playgroundHandler({ ws }: HandlerArgs): Promise<void> {

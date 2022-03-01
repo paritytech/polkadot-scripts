@@ -27,7 +27,6 @@ export async function electionScoreStats(chain: string, api: ApiPromise, apiKey:
 
 	const avg = [new BN(0), new BN(0), new BN(0)]
 	for (const score of scores) {
-		console.log(score);
 		avg[0] = avg[0].add(new BN(score[0]))
 		avg[1] = avg[1].add(new BN(score[1]))
 		avg[2] = avg[2].add(new BN(score[2]))
