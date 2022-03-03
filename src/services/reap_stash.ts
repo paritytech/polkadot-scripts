@@ -20,12 +20,14 @@ export async function reapStash(api: ApiPromise, account: KeyringPair, sendTx: b
 	for (const [ctrl, ledger] of ledgers) {
 		const total = ledger.unwrapOrDefault().total;
 		count += 1;
-
-		if (total.unwrap().lt(ED)) {
+		const stash = ledger.unwrapOrDefault().stash;
+		const maybeBonded = (await api.query.staking.bonded(stash));
+		if (total.toBn().lt(ED) && maybeBonded.isSome) {
 			stale += 1;
-			toReap.push(ledger.unwrapOrDefault().stash);
-			console.log(`🚨 ${ctrl.args[0] ? ctrl.args[0] : ctrl} is stale. ledger.total=${api.createType('Balance', total).toHuman()}.`)
-
+			toReap.push(stash);
+			console.log(`🎣 ${ctrl.args[0] ? ctrl.args[0] : ctrl} is stale. ledger.total=${api.createType('Balance', total).toHuman()}.`)
+		} else if (maybeBonded.isNone)  {
+			console.log(`❌ controller ${ctrl.args[0]} seems to have a ledger ${ledger}, but not linked via Bonded to its stash ${stash}`)
 		}
 
 		if (txCount > -1 && stale >= txCount) {
@@ -43,7 +45,7 @@ export async function reapStash(api: ApiPromise, account: KeyringPair, sendTx: b
 
 	console.log(`${stale} (stale) / ${count} (total examined)`);
 
-	const [success] = await dryRun(api, account, tx);
+	const [success, result] = await dryRun(api, account, tx);
 	if (success && sendTx) {
 		const { success, included } = await sendAndFinalize(tx, account);
 		console.log(`ℹ️ success = ${success}. Events =`)
@@ -51,7 +53,7 @@ export async function reapStash(api: ApiPromise, account: KeyringPair, sendTx: b
 			process.stdout.write(`${ev.event.section}::${ev.event.method}`)
 		}
 	} else if (!success) {
-		console.log(`warn: dy-run failed.`)
+		console.log(`warn: dy-run failed.`, result.asOk.toString())
 	} else {
 		console.log("no reap-stash batch tx sent")
 	}

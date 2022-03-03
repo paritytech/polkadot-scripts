@@ -3,8 +3,9 @@ export * from "./election_score_stats"
 
 import { ApiPromise } from "@polkadot/api";
 import BN from 'bn.js';
-import { AccountId32 } from '@polkadot/types/interfaces';
-import {  PalletStakingIndividualExposure } from '@polkadot/types/lookup'
+import { AccountId32} from '@polkadot/types/interfaces';
+import { PalletStakingIndividualExposure } from '@polkadot/types/lookup'
+import "@polkadot/api-augment"
 import {} from "../handlers";
 
 export async function nominatorThreshold(api: ApiPromise) {
@@ -31,6 +32,36 @@ export async function stakingStats(api: ApiPromise) {
 		const stake = (await api.query.staking.ledger(controller)).unwrap().total.toBn();
 		return stake
 	}
+	/// Returns the minimum in the entire bags list.
+	const traverseNominatorBags = async (until: number): Promise<[AccountId32, number]> => {
+		const bagThresholds = api.consts.bagsList.bagThresholds.map((x) => api.createType('Balance', x));
+		let taken = 0;
+		let next: AccountId32 = api.createType('AccountId', []);
+		for (const threshold of bagThresholds.reverse()) {
+			const maybeBag = await api.query.bagsList.listBags(threshold.toBn());
+			let reached = false;
+			if (maybeBag.isSome && maybeBag.unwrap().head.isSome) {
+				console.log(`traversing bag ${threshold}, taken ${taken}`)
+				const head = maybeBag.unwrap().head.unwrap();
+				next = head;
+				let cond = true;
+				while (cond) {
+					const nextNode = await api.query.bagsList.listNodes(next);
+					if (nextNode.isSome && nextNode.unwrap().next.isSome) {
+						next = nextNode.unwrap().next.unwrap();
+						taken += 1;
+						if (taken > until) { cond = false; reached = true }
+					} else {
+						cond = false
+					}
+				}
+			}
+
+			if (reached) { break }
+		}
+
+		return [next, taken]
+	}
 
 	// a map from all nominators to their total stake.
 	const assignments: Map<AccountId32, BN> = new Map();
@@ -45,128 +76,55 @@ export async function stakingStats(api: ApiPromise) {
 		assignments.set(nominator, val ? amount.toBn().add(val) : amount.toBn())
 	})
 
+	const [minNominatorInBags, nominatorsInBags] = await traverseNominatorBags(api.consts.electionProviderMultiPhase.voterSnapshotPerBlock.toNumber());
+
 	// nominator stake
 	{
 		const minIntentionThreshold = await api.query.staking.minNominatorBond();
+		const minElectingThreshold = await stakeOf(minNominatorInBags);
 
-		let minElectingThreshold = new BN(0)
-		const snapshot = (await api.query.electionProviderMultiPhase.snapshot());
-		if (snapshot.isSome) {
-			const voters = snapshot.unwrap().voters;
-			voters.sort((a, b) => a[1].cmp(b[1]));
-			minElectingThreshold = api.createType('Balance', voters[0]);
-		}
-
-		const stakes = Array.from(assignments.values());
-		stakes.sort((a, b) => a.cmp(b));
-		const minExposedThreshold = stakes[0];
-		console.log(`nominator stake: min-intention-threshold: ${b(minIntentionThreshold)} / min-electing-threshold: ${b(minElectingThreshold)} / min-exposed-threshold: ${b(minExposedThreshold)}`)
+		const nominatorStakes = Array.from(assignments.values());
+		nominatorStakes.sort((a, b) => a.cmp(b));
+		const minExposedThreshold = nominatorStakes[0];
+		console.log(`nominator stake: min-intention-threshold: ${b(minIntentionThreshold)} / min-electing: ${b(minElectingThreshold)} / min-active: ${b(minExposedThreshold)}`)
 	}
 
 	// nominator count
 	{
 		const intentionCount = await api.query.staking.counterForNominators();
-		let electingCount = 0;
-		const snapshot = (await api.query.electionProviderMultiPhase.snapshot());
-		if (snapshot.isSome) {
-			electingCount = snapshot.unwrap().voters.length;
-		}
-		const exposedCount = assignments.size;
+		const electingCount = nominatorsInBags;
+		const activeCount = assignments.size;
 
 		const intentionMax = await api.query.staking.maxNominatorsCount();
 		const electingMax = api.consts.electionProviderMultiPhase.voterSnapshotPerBlock;
-		const exposedMax = electingMax;
+		const activeMax = electingMax;
 
-		console.log(`nominator count: intentions: ${intentionCount} / electing: ${electingCount} / exposed: ${exposedCount}`)
-		console.log(`nominator count: max intention: ${intentionMax} / max electing ${electingMax} / max exposed: ${exposedMax} `)
+		console.log(`nominator count: intentions: ${intentionCount} / electing: ${electingCount} / active: ${activeCount}`)
+		console.log(`nominator count: max intention: ${intentionMax} / max electing ${electingMax} / max active: ${activeMax} `)
 	}
 
 	// validator stake
 	{
 		const minIntentionThreshold = await api.query.staking.minValidatorBond();
 
-		// NOTE: this needs to be fetched from the snapshot, but since the actual stake is not
-		// recorded in the snapshot, we make a best effort at fetching their stake NOW, which might
-		// be slightly different than what is recorded in the snapshot.
-		let minElectableThreshold = new BN(0);
-		const snapshot = (await api.query.electionProviderMultiPhase.snapshot());
-		if (snapshot.isSome) {
-			interface Target { stake: BN, who: AccountId32 }
-			const targetsAndStake: Target[] = await Promise.all(snapshot.unwrap().targets.map(async (t) => {
-				return { who: t, stake: await stakeOf(t) }
-			}));
-			targetsAndStake.sort((a, b) => a.stake.cmp(b.stake));
-			minElectableThreshold = targetsAndStake[0].stake;
-		}
+		// as of now, all validator intentions become electable, so the threshold is the same.
+		const minElectableThreshold = minIntentionThreshold;
 
 		const minExposedThreshold = stakers[0][1].total.toBn();
-		console.log(`validator stake: min-intention-threshold: ${b(minIntentionThreshold)} / min-electing-threshold: ${b(minElectableThreshold)} / min-exposed-threshold: ${b(minExposedThreshold)}`)
+		console.log(`validator stake: min-intention-threshold: ${b(minIntentionThreshold)} / min-electing: ${b(minElectableThreshold)} / min-active: ${b(minExposedThreshold)}`)
 	}
 
 	// validator count
 	{
 		const intentionCount = await api.query.staking.counterForValidators();
-		let electableCount = 0;
-		const snapshot = (await api.query.electionProviderMultiPhase.snapshot());
-		if (snapshot.isSome) {
-			electableCount = snapshot.unwrap().targets.length;
-		}
-		const exposedCount = stakers.length;
+		const electableCount = intentionCount;
+		const activeCount = stakers.length;
 
 		const intentionMax = await api.query.staking.maxValidatorsCount();
 		const electableMax = await api.query.staking.maxValidatorsCount();
-		const exposedMax = await api.query.staking.validatorCount();
+		const activeMax = await api.query.staking.validatorCount();
 
-		console.log(`validator count: intentions: ${intentionCount} / electable: ${electableCount} / exposed: ${exposedCount}`)
-		console.log(`validator count: max intention: ${intentionMax} / max electable: ${electableMax} / max exposed: ${exposedMax} `)
+		console.log(`validator count: intentions: ${intentionCount} / electable: ${electableCount} / active: ${activeCount}`)
+		console.log(`validator count: max intention: ${intentionMax} / max electable: ${electableMax} / max active: ${activeMax} `)
 	}
-
-/*
-**Definitions**:
-
-The staking election system follows a 3 step system for both validator and nominators, namely
-"intention", "electing/electable", and "active".
-
-- intending to validate: an account that has stated the intention to validate. also called, simply
-  "validator".
-- electable validator: a validator who is selected to be a part of the NPoS election. This selection
-  can be based on different criteria, usually stake, and done via the "bags-list" pallet.
-- active validator: a validator who came out of the NPoS election as a winner, consequently earning
-  rewards, and being exposed to slashing.
-
-- intending to nominate: an account that has stated the intention to nominate. also called, simply
-  "nominator".
-- electing nominator: a nominator who is selected to be a part of the NPoS election. This selection
-  can be based on different criteria, usually stake, and done via the "bags-list" pallet.
-- active nominator: a nominator who came out of the NPoS election backing an active validator,
-  sharing their reward and slash.
-
-Thus,
-
-- for nominator counters, we have:
-    1. count of intentions aka nominator, and maximum possible intentions.
-    2. count of electing nominators, and maximum possible electing nominators.
-    3. count of active nominators, and maximum possible active nominators.
-
-- for nominator stake, we have:
-    1. min-intention-threshold: minimum stake to declare the intention to nominate.
-    2. min-electing-threshold: minimum stake to be part of the electing set.
-    3. min-exposed-threshold: minimum stake to be exposed.
-
-Similarly,
-
-- for validator counters we have:
-    1. count of intentions aka validators, and maximum possible intentions.
-    2. count of electable nominators, and maximum possible electable nominators.
-    3. count of active nominators, and maximum possible active nominators.
-
-- for validator stake, we have:
-    1. min-intention-threshold: minimum (self) stake to declare intention.
-    2. min-electable-threshold: minimum (self) stake to be part of the electable set.
-    3. min-exposed-threshold: minimum (total) stake to be exposed.
-
-With the only exception that a validator has two types of stake: self stake and total stake. In the
-first two steps, their total stake is unknown. In the last step, but the total stake and self stake
-is known. By default, we mean self stake in the first two steps, and total stake in the third.
-*/
 }
