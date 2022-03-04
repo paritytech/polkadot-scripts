@@ -8,6 +8,7 @@ import { chillOther } from './services/chill_other';
 import { stateTrieMigration } from './services/state_trie_migration';
 import "@polkadot/api-augment"
 import "@polkadot/types-augment"
+import BN from 'bn.js';
 
 
 /// TODO: split this per command, it is causing annoyance.
@@ -100,6 +101,23 @@ export async function stakingStatsHandler(args: HandlerArgs): Promise<void> {
 }
 
 export async function playgroundHandler({ ws }: HandlerArgs): Promise<void> {
-	// temp fix for the empty function
-	console.log(ws)
+	const api = await getApi(ws);
+	const chain = (await api.rpc.system.chain()).toString().toLowerCase();
+	const limit = api.createType('Balance', chain == "polkadot" ? new BN(500 * Math.pow(10, 10)) : new BN(1 * Math.pow(10, 12)));
+	const lessPromise = (await api.query.staking.validators.keys())
+		.map((arg) => arg.args[0])
+		.map(async (stash) => {
+			const ctrl = await api.query.staking.bonded(stash);
+			const ledger = await api.query.staking.ledger(ctrl.unwrap());
+			const active = ledger.unwrap().active.toBn();
+			return active.lt(limit.toBn());
+		})
+	const less = (await Promise.all(lessPromise));
+	console.log(`num validators with less than ${limit.toHuman()}: ${less.filter(x => x).length} / ${(await api.query.staking.validators.keys()).length}`);
+
+	if (chain == "kusama") {
+		const all = (await api.query.staking.nominators.entries());
+		const more = all.map((x) => x[1]).map((n) => n.unwrapOrDefault().targets.length).filter((x) => x > 16);
+		console.log(`num nominators using more than 16 votes ${more.length} / ${all.length}`)
+	}
 }
