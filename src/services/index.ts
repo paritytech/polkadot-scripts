@@ -6,7 +6,6 @@ import BN from 'bn.js';
 import { AccountId32} from '@polkadot/types/interfaces';
 import { PalletStakingIndividualExposure } from '@polkadot/types/lookup'
 import "@polkadot/api-augment"
-import {} from "../handlers";
 
 export async function nominatorThreshold(api: ApiPromise) {
 	const DOT = 10000000000;
@@ -26,10 +25,10 @@ export async function nominatorThreshold(api: ApiPromise) {
 
 export async function stakingStats(api: ApiPromise) {
 	const b = (x: BN): string => api.createType('Balance', x).toHuman()
-	const stakeOf = async (stash: AccountId32) => {
+	const stakeOf = async (stash: string) => {
 		// all stashes must have a controller ledger, and a ledger.
 		const controller = (await api.query.staking.bonded(stash)).unwrap();
-		const stake = (await api.query.staking.ledger(controller)).unwrap().total.toBn();
+		const stake = (await api.query.staking.ledger(controller)).unwrap().active.toBn();
 		return stake
 	}
 	/// Returns the minimum in the entire bags list.
@@ -41,7 +40,6 @@ export async function stakingStats(api: ApiPromise) {
 			const maybeBag = await api.query.bagsList.listBags(threshold.toBn());
 			let reached = false;
 			if (maybeBag.isSome && maybeBag.unwrap().head.isSome) {
-				console.log(`traversing bag ${threshold}, taken ${taken}`)
 				const head = maybeBag.unwrap().head.unwrap();
 				next = head;
 				let cond = true;
@@ -64,16 +62,17 @@ export async function stakingStats(api: ApiPromise) {
 	}
 
 	// a map from all nominators to their total stake.
-	const assignments: Map<AccountId32, BN> = new Map();
+	const assignments: Map<string, BN> = new Map();
 	const currentEra = (await api.query.staking.currentEra()).unwrap();
 	const stakers = await api.query.staking.erasStakers.entries(currentEra);
 	stakers.sort((a, b) => a[1].total.toBn().cmp(b[1].total.toBn()))
 
 	stakers.map((x) => x[1].others).flat(1).forEach((x) => {
-		const nominator = (x as PalletStakingIndividualExposure).who;
+		const nominator = (x as PalletStakingIndividualExposure).who.toString();
 		const amount = (x as PalletStakingIndividualExposure).value;
-		const val = assignments.get(nominator)
+		const val = assignments.get(nominator);
 		assignments.set(nominator, val ? amount.toBn().add(val) : amount.toBn())
+
 	})
 
 	const [minNominatorInBags, nominatorsInBags] = await traverseNominatorBags(api.consts.electionProviderMultiPhase.voterSnapshotPerBlock.toNumber());
@@ -81,11 +80,11 @@ export async function stakingStats(api: ApiPromise) {
 	// nominator stake
 	{
 		const minIntentionThreshold = await api.query.staking.minNominatorBond();
-		const minElectingThreshold = await stakeOf(minNominatorInBags);
+		const minElectingThreshold = await stakeOf(minNominatorInBags.toString());
 
-		const nominatorStakes = Array.from(assignments.values());
-		nominatorStakes.sort((a, b) => a.cmp(b));
-		const minExposedThreshold = nominatorStakes[0];
+		const nominatorStakes = Array.from(assignments);
+		nominatorStakes.sort((a, b) => a[1].cmp(b[1]));
+		const minExposedThreshold = nominatorStakes[0][1];
 		console.log(`nominator stake: min-intention-threshold: ${b(minIntentionThreshold)} / min-electing: ${b(minElectingThreshold)} / min-active: ${b(minExposedThreshold)}`)
 	}
 

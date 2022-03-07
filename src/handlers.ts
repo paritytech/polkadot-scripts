@@ -10,7 +10,6 @@ import "@polkadot/api-augment"
 import "@polkadot/types-augment"
 import BN from 'bn.js';
 
-
 /// TODO: split this per command, it is causing annoyance.
 export interface HandlerArgs {
 	ws: string;
