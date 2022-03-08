@@ -84,8 +84,8 @@ export async function stakingStats(api: ApiPromise) {
 
 		const nominatorStakes = Array.from(assignments);
 		nominatorStakes.sort((a, b) => a[1].cmp(b[1]));
-		const minExposedThreshold = nominatorStakes[0][1];
-		console.log(`nominator stake: min-intention-threshold: ${b(minIntentionThreshold)} / min-electing: ${b(minElectingThreshold)} / min-active: ${b(minExposedThreshold)}`)
+		const minActiveThreshold = nominatorStakes[0][1];
+		console.log(`nominator stake: min-intention-threshold: ${b(minIntentionThreshold)} / min-electing: ${b(minElectingThreshold)} / min-active: ${b(minActiveThreshold)}`)
 	}
 
 	// nominator count
@@ -109,8 +109,8 @@ export async function stakingStats(api: ApiPromise) {
 		// as of now, all validator intentions become electable, so the threshold is the same.
 		const minElectableThreshold = minIntentionThreshold;
 
-		const minExposedThreshold = stakers[0][1].total.toBn();
-		console.log(`validator stake: min-intention-threshold: ${b(minIntentionThreshold)} / min-electing: ${b(minElectableThreshold)} / min-active: ${b(minExposedThreshold)}`)
+		const minActiveThreshold = stakers[0][1].total.toBn();
+		console.log(`validator stake: min-intention-threshold: ${b(minIntentionThreshold)} / min-electing: ${b(minElectableThreshold)} / min-active: ${b(minActiveThreshold)}`)
 	}
 
 	// validator count
