@@ -11,6 +11,11 @@ export async function stateTrieMigration(api: ApiPromise, account: KeyringPair, 
 		MigrationLimits: {
 			"size": "U32",
 			"item": "U32"
+		},
+		Progress: {
+			"ToStart": "null",
+			"LastKey": "Vec<U8>",
+			"Complete": "null",
 		}
 	})
 	const maxLimits = api.consts.stateTrieMigration.signedMigrationMaxLimits;
@@ -67,10 +72,7 @@ export async function stateTrieMigration(api: ApiPromise, account: KeyringPair, 
 
 	function isFinished(task: unknown): boolean {
 		// @ts-ignore
-		const currentTop: Option<Uint8Array> = task["currentTop"];
-		// @ts-ignore
-		const currentChild: Option<Uint8Array> = task["currentChild"];
-		return currentTop.isNone && currentChild.isNone
+		return task.progressTop.isComplete;
 	}
 
 	let init = false;

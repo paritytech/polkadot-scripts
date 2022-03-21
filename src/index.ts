@@ -116,7 +116,7 @@ async function main() {
 		.command(['state-trie-migration'], 'Try and submit transactions to migrate the state trie version. See https://github.com/paritytech/substrate/pull/10073. This can only work against a node that supports dry-run RPC.',
 			(yargs) => {
 				return yargs.options({
-					count: {
+					'count': {
 						description: 'Total number of transactions to send. Unlimited if not set.',
 						number: true,
 						demandOption: false,
