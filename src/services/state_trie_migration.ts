@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
-import { Option,  } from "@polkadot/types/"
 import { ApiPromise } from "@polkadot/api";
 import { dryRun, sendAndFinalize } from "../helpers";
 import { KeyringPair } from "@polkadot/keyring/types";
@@ -18,10 +17,12 @@ export async function stateTrieMigration(api: ApiPromise, account: KeyringPair, 
 			"Complete": "null",
 		}
 	})
-	const maxLimits = api.consts.stateTrieMigration.signedMigrationMaxLimits;
+	const maxLimits = await api.query.stateTrieMigration.signedMigrationMaxLimits();
+	// @ts-ignore
+	assert(maxLimits.isSome, "max limits not set")
 	assert(
 		// @ts-ignore
-		maxLimits["size_"].gte(new BN(sizeLimit)) && maxLimits["item"].gte(new BN(itemLimit)),
+		maxLimits.unwrap()["size_"].gte(new BN(sizeLimit)) && maxLimits.unwrap()["item"].gte(new BN(itemLimit)),
 		`cli limits more than maximum: max ${maxLimits.toString()}, cli: ${itemLimit} / ${sizeLimit}`,
 	);
 
