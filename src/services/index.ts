@@ -75,17 +75,17 @@ export async function stakingStats(api: ApiPromise) {
 
 	})
 
-	// const [minNominatorInBags, nominatorsInBags] = await traverseNominatorBags(api.consts.electionProviderMultiPhase.voterSnapshotPerBlock.toNumber());
+	const [minNominatorInBags, _] = await traverseNominatorBags(api.consts.electionProviderMultiPhase.voterSnapshotPerBlock.toNumber());
 
 	// nominator stake
 	{
 		const minIntentionThreshold = await api.query.staking.minNominatorBond();
-		// const minElectingThreshold = await stakeOf(minNominatorInBags.toString());
+		const minElectingThreshold = await stakeOf(minNominatorInBags.toString());
 
 		const nominatorStakes = Array.from(assignments);
 		nominatorStakes.sort((a, b) => a[1].cmp(b[1]));
 		const minActiveThreshold = nominatorStakes[0][1];
-		console.log(`nominator stake: min-intention-threshold: ${b(minIntentionThreshold)} / min-active: ${b(minActiveThreshold)}`)
+		console.log(`nominator stake: min-intention-threshold: ${b(minIntentionThreshold)} / min-electing = ${b(minElectingThreshold)} / min-active: ${b(minActiveThreshold)}`)
 	}
 
 	// nominator count

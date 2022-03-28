@@ -12,12 +12,26 @@ interface ISubmitResult {
 	finalized: EventRecord[],
 }
 
-export async function sendAndFinalize(tx: SubmittableExtrinsic<"promise", ISubmittableResult>, account: KeyringPair): Promise<ISubmitResult> {
+export async function dryRunMaybeSendAndFinalize(api: ApiPromise, tx: SubmittableExtrinsic<"promise", ISubmittableResult>, signer: KeyringPair, sendTx: boolean): Promise<ISubmitResult | undefined> {
+	console.log((await tx.paymentInfo(signer)).toHuman());
+	const [success, result] = await dryRun(api, signer, tx);
+	console.log(`dry-run outcome is ${success} / ${result}`)
+	if (success && sendTx) {
+		return await sendAndFinalize(tx, signer)
+	} else if (!success) {
+		console.log(`warn: dy-run failed.`)
+	} else {
+		console.log("no rebag batch tx sent")
+	}
+	return undefined;
+}
+
+export async function sendAndFinalize(tx: SubmittableExtrinsic<"promise", ISubmittableResult>, signer: KeyringPair): Promise<ISubmitResult> {
 	return new Promise(resolve => {
 		let success = false;
 		let included: EventRecord[] = []
 		let finalized: EventRecord[] = []
-		tx.signAndSend(account, ({ events = [], status, dispatchError }) => {
+		tx.signAndSend(signer, ({ events = [], status, dispatchError }) => {
 			if (status.isInBlock) {
 				success = dispatchError ? false : true;
 				console.log(`📀 Transaction ${tx.meta.name}(..) included at blockHash ${status.asInBlock} [success = ${success}]`);
@@ -38,8 +52,8 @@ export async function sendAndFinalize(tx: SubmittableExtrinsic<"promise", ISubmi
 	})
 }
 
-export async function dryRun(api: ApiPromise, account: KeyringPair, tx: SubmittableExtrinsic<"promise", ISubmittableResult>): Promise<[boolean, ApplyExtrinsicResult]> {
-	const signed = await tx.signAsync(account);
+export async function dryRun(api: ApiPromise, signer: KeyringPair, tx: SubmittableExtrinsic<"promise", ISubmittableResult>): Promise<[boolean, ApplyExtrinsicResult]> {
+	const signed = await tx.signAsync(signer);
 	const dryRun = await api.rpc.system.dryRun(signed.toHex());
 	return [dryRun.isOk && dryRun.asOk.isOk, dryRun]
 }
