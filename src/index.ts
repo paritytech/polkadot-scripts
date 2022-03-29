@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
-import yargs, { string } from 'yargs';
+import yargs from 'yargs';
 import { rebagHandler, electionScoreHandler, playgroundHandler, reapStashHandler, nominatorThreshHandler, chillOtherHandler, stateTrieMigrationHandler, stakingStatsHandler } from './handlers';
 
 

@@ -75,7 +75,7 @@ export async function stakingStats(api: ApiPromise) {
 
 	})
 
-	const [minNominatorInBags, _] = await traverseNominatorBags(api.consts.electionProviderMultiPhase.voterSnapshotPerBlock.toNumber());
+	const [minNominatorInBags] = await traverseNominatorBags(api.consts.electionProviderMultiPhase.voterSnapshotPerBlock.toNumber());
 
 	// nominator stake
 	{

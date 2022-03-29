@@ -31,9 +31,10 @@ export async function rebagHandler({ ws, sendTx, target, seed }: HandlerArgs): P
 	}
 
 	function isNumeric(str: string) {
+		// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 		// @ts-ignore
 		return !isNaN(str) && !isNaN(parseFloat(str))
-	  }
+	}
 
 	const api = await getApi(ws);
 	const account = await getAccountFromEnvOrArgElseAlice(api, seed)
@@ -135,7 +136,6 @@ export async function playgroundHandler({ ws }: HandlerArgs): Promise<void> {
 	// 	console.log(`num nominators using more than 16 votes ${more.length} / ${all.length}`)
 	// }
 
-	const rangeEnd = 10;
 	const rangeStart = 100;
 	let currentHash = await api.rpc.chain.getFinalizedHead();
 	const ADDR = "0xasdasd";
