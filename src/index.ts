@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 import yargs from 'yargs';
-import { bagsHandler, electionScoreHandler, playgroundHandler, reapStashHandler, nominatorThreshHandler, chillOtherHandler, stateTrieMigrationHandler, stakingStatsHandler } from './handlers';
+import { rebagHandler, electionScoreHandler, playgroundHandler, reapStashHandler, nominatorThreshHandler, chillOtherHandler, stateTrieMigrationHandler, stakingStatsHandler } from './handlers';
 
 
 /**
@@ -29,8 +29,8 @@ async function main() {
 			}
 		})
 		.command(
-			['bags'],
-			'check the bags list',
+			['rebag'],
+			'check the bags list for rebag operations',
 			// @ts-ignore
 			(yargs) => {
 				return yargs.options({
@@ -41,16 +41,15 @@ async function main() {
 						demandOption: false,
 						default: false,
 					},
-					count: {
-						alias: 'c',
-						description: 'How many rebag transactions to send. Iteration will stop if provided. All bags are iterated if  otherwise.',
+					target: {
+						alias: 't',
+						description: 'Who to target. Accepted values are "all", a number, or a specific "ss58" account id',
 						demandOption: false,
-						number: true,
-						default: -1,
+						default: 'all',
 					},
 				});
 			},
-			bagsHandler
+			rebagHandler
 		)
 		.command(
 			['chill-other'],

@@ -1,14 +1,13 @@
 // CLI command handlers. Responsible for gather all command inputs and calling the
 // relevant services with them.
 
-import { bagsListCheck, nominatorThreshold, electionScoreStats, stakingStats } from './services';
+import { doRebagAll, nominatorThreshold, electionScoreStats, stakingStats, doRebagSingle } from './services';
 import { getAccountFromEnvOrArgElseAlice, getApi } from './helpers';
 import { reapStash } from './services/reap_stash';
 import { chillOther } from './services/chill_other';
 import { stateTrieMigration } from './services/state_trie_migration';
 import "@polkadot/api-augment"
 import "@polkadot/types-augment"
-import BN from 'bn.js';
 
 /// TODO: split this per command, it is causing annoyance.
 export interface HandlerArgs {
@@ -16,23 +15,40 @@ export interface HandlerArgs {
 	sendTx?: boolean;
 	count?: number,
 	noDryRun?: boolean,
+	target?: string
 	seed?: string,
 
 	itemLimit?: number,
 	sizeLimit?: number,
 }
 
-export async function bagsHandler({ ws, sendTx, count, seed }: HandlerArgs): Promise<void> {
+export async function rebagHandler({ ws, sendTx, target, seed }: HandlerArgs): Promise<void> {
 	if (sendTx === undefined) {
 		throw 'sendTx must be a true or false'
 	}
-	if (count === undefined) {
-		count = -1
+	if (target === undefined) {
+		target = 'all'
+	}
+
+	function isNumeric(str: string) {
+		// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+		// @ts-ignore
+		return !isNaN(str) && !isNaN(parseFloat(str))
 	}
 
 	const api = await getApi(ws);
 	const account = await getAccountFromEnvOrArgElseAlice(api, seed)
-	await bagsListCheck(api, account, sendTx, count);
+	if (target == 'all') {
+		console.log(`rebagging all accounts`);
+		await doRebagAll(api, account, sendTx, Number.POSITIVE_INFINITY);
+	} else if (isNumeric(target)) {
+		const count = Number(target);
+		console.log(`rebagging up to ${count} accounts`);
+		await doRebagAll(api, account, sendTx, count);
+	} else {
+		console.log(`rebagging account ${target}`)
+		await doRebagSingle(api, account, target, sendTx);
+	}
 }
 
 export async function chillOtherHandler({ ws, sendTx, count, noDryRun, seed }: HandlerArgs): Promise<void> {
@@ -120,7 +136,6 @@ export async function playgroundHandler({ ws }: HandlerArgs): Promise<void> {
 	// 	console.log(`num nominators using more than 16 votes ${more.length} / ${all.length}`)
 	// }
 
-	const rangeEnd = 10;
 	const rangeStart = 100;
 	let currentHash = await api.rpc.chain.getFinalizedHead();
 	const ADDR = "0xasdasd";

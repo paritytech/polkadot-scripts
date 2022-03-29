@@ -3,10 +3,12 @@ import { KeyringPair } from "@polkadot/keyring/types";
 
 import BN from "bn.js"
 import { AccountId, Balance, } from "@polkadot/types/interfaces/runtime"
-import { PalletBagsListListNode } from "@polkadot/types/lookup"
+import { PalletBagsListListNode, PalletBagsListListBag } from "@polkadot/types/lookup"
 import { strict as assert } from 'assert'
-import { dryRun, sendAndFinalize } from '../helpers'
+import { dryRun, dryRunMaybeSendAndFinalize, sendAndFinalize } from '../helpers'
 import { ApiDecoration } from "@polkadot/api/types";
+import { formatBalance } from "@polkadot/util"
+import { Option } from "@polkadot/types-codec";
 
 interface Bag {
 	head: AccountId,
@@ -15,18 +17,26 @@ interface Bag {
 	nodes: AccountId[],
 }
 
-async function needsRebag(baseApi: ApiPromise, api: ApiDecoration<"promise">, bagThresholds: Balance[], currentUpper: Balance, node: PalletBagsListListNode): Promise<boolean> {
+async function correctWeightOf(node: PalletBagsListListNode, api: ApiDecoration<"promise">): Promise<BN> {
 	const currentAccount = node.id;
 	const currentCtrl = (await api.query.staking.bonded(currentAccount)).unwrap();
-	const currentWeight = baseApi.createType('Balance', (await api.query.staking.ledger(currentCtrl)).unwrapOrDefault().active);
-	const canonicalUpper = bagThresholds.find((t) => t.gt(currentWeight)) || baseApi.createType('Balance', new BN("18446744073709551615"));
-	if (canonicalUpper.gt(currentUpper)) {
-		console.log(`\t ☝️ ${currentAccount} needs a rebag from ${currentUpper.toHuman()} to higher ${canonicalUpper.toHuman()} [real weight = ${currentWeight.toHuman()}]`)
+	return (await api.query.staking.ledger(currentCtrl)).unwrapOrDefault().active.toBn()
+}
+
+async function needsRebag(
+	api: ApiDecoration<"promise">,
+	bagThresholds: BN[],
+	node: PalletBagsListListNode,
+): Promise<boolean> {
+	const currentWeight = await correctWeightOf(node, api);
+	const canonicalUpper = bagThresholds.find((t) => t.gt(currentWeight)) || new BN("18446744073709551615");
+	if (canonicalUpper.gt(node.bagUpper)) {
+		console.log(`\t ☝️ ${node.id} needs a rebag from ${node.bagUpper.toHuman()} to higher ${formatBalance(canonicalUpper)} [real weight = ${formatBalance(currentWeight)}]`)
 		return true
-	} else if (canonicalUpper.lt(currentUpper)) {
+	} else if (canonicalUpper.lt(node.bagUpper)) {
 		// this should ALMOST never happen: we handle all rebags to lower accounts, except if a
 		// slash happens.
-		console.log(`\t 👇 ☢️ ${currentAccount} needs a rebag from ${currentUpper.toHuman()} to lower ${canonicalUpper.toHuman()} [real weight = ${currentWeight.toHuman()}]`)
+		console.log(`\t 👇 ☢️ ${node.id} needs a rebag from ${node.bagUpper.toHuman()} to lower ${formatBalance(canonicalUpper)} [real weight = ${formatBalance(currentWeight)}]`)
 		return true
 	} else {
 		// correct spot.
@@ -34,7 +44,24 @@ async function needsRebag(baseApi: ApiPromise, api: ApiDecoration<"promise">, ba
 	}
 }
 
-export async function bagsListCheck(api: ApiPromise, account: KeyringPair, sendTx: boolean, count: number): Promise<void> {
+export async function doRebagSingle(api: ApiPromise, signer: KeyringPair, target: string, sendTx: boolean): Promise<void> {
+	const node = (await api.query.bagsList.listNodes(target)).unwrap();
+	const bagThresholds = api.consts.bagsList.bagThresholds.map((x) => api.createType('Balance', x));
+	if (await needsRebag(api, bagThresholds, node)) {
+		const tx = api.tx.bagsList.rebag(node.id);
+		const maybeSubmit = await dryRunMaybeSendAndFinalize(api, tx, signer, sendTx);
+		if (maybeSubmit) {
+			const { success, included } = maybeSubmit
+			console.log(`ℹ️ success = ${success}. Events =`)
+			for (const ev of included) {
+				process.stdout.write(`${ev.event.section}::${ev.event.method}`)
+			}
+		}
+
+	}
+}
+
+export async function doRebagAll(api: ApiPromise, signer: KeyringPair, sendTx: boolean, count: number): Promise<void> {
 	let entries;
 	try {
 		entries = await api.query.bagsList.listBags.entries();
@@ -70,7 +97,7 @@ export async function bagsListCheck(api: ApiPromise, account: KeyringPair, sendT
 		let cond = true
 		while (cond) {
 			const currentNode = (await finalizedApi.query.bagsList.listNodes(current)).unwrap();
-			if (await needsRebag(api, finalizedApi, bagThresholds, upper, currentNode)) {
+			if (await needsRebag(finalizedApi, bagThresholds, currentNode)) {
 				needRebag.push(currentNode.id);
 			}
 			nodes.push(currentNode.id);
@@ -98,11 +125,11 @@ export async function bagsListCheck(api: ApiPromise, account: KeyringPair, sendT
 
 	const txsInner = needRebag.map((who) => api.tx.bagsList.rebag(who)).slice(0, count);
 	const tx = api.tx.utility.batchAll(txsInner);
-	console.log((await tx.paymentInfo(account)).toHuman());
-	const [success, result] = await dryRun(api, account, tx);
+	console.log((await tx.paymentInfo(signer)).toHuman());
+	const [success, result] = await dryRun(api, signer, tx);
 	console.log(`dry-run outcome is ${success} / ${result}`)
 	if (success && sendTx && txsInner.length) {
-		const { success, included } = await sendAndFinalize(tx, account);
+		const { success, included } = await sendAndFinalize(tx, signer);
 		console.log(`ℹ️ success = ${success}. Events =`)
 		for (const ev of included) {
 			process.stdout.write(`${ev.event.section}::${ev.event.method}`)
@@ -111,5 +138,48 @@ export async function bagsListCheck(api: ApiPromise, account: KeyringPair, sendT
 		console.log(`warn: dy-run failed.`)
 	} else {
 		console.log("no rebag batch tx sent")
+	}
+}
+
+export async function needsPutInFrontOf(
+	api: ApiDecoration<"promise">,
+	node: PalletBagsListListNode,
+	bag: PalletBagsListListBag,
+): Promise<AccountId | undefined> {
+	// it is best ot be in a position of a bag as close to the head as possible. So, we start form
+	// the head, and if any node's weight is less than ours, then we can go in front of them.
+	const ourWeight = await correctWeightOf(node, api);
+	let maybeCurrentAccount: Option<AccountId> = bag.head;
+	while (maybeCurrentAccount.isSome) {
+		const currentNode = (await api.query.bagsList.listNodes(maybeCurrentAccount.unwrap())).unwrap();
+		const theirWeight = await correctWeightOf(currentNode, api);
+		if (ourWeight.gt(theirWeight)) {
+			// we can go in front of them!
+			return maybeCurrentAccount.unwrap()
+		} else {
+			maybeCurrentAccount = currentNode.next
+		}
+	}
+	return undefined
+}
+
+export async function doPutInFrontOf(api: ApiPromise, signer: KeyringPair, target: string): Promise<void> {
+	const targetAccount = api.createType('AccountId', target);
+	const targetNode = (await api.query.bagsList.listNodes(targetAccount)).unwrap();
+	const targetCurrentBagThreshold = targetNode.bagUpper;
+	const targetBag = (await api.query.bagsList.listBags(targetCurrentBagThreshold)).unwrap();
+
+	const maybeWeaker = await needsPutInFrontOf(api, targetNode, targetBag);
+
+	if (maybeWeaker) {
+		const tx = api.tx.bagsList.putInFrontOf(maybeWeaker);
+		const maybeSubmit = await dryRunMaybeSendAndFinalize(api, tx, signer, true);
+		if (maybeSubmit) {
+			const { success, included } = maybeSubmit
+			console.log(`ℹ️ success = ${success}. Events =`)
+			for (const ev of included) {
+				process.stdout.write(`${ev.event.section}::${ev.event.method}`)
+			}
+		}
 	}
 }
