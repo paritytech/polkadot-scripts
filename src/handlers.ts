@@ -1,7 +1,7 @@
 // CLI command handlers. Responsible for gather all command inputs and calling the
 // relevant services with them.
 
-import { doRebagAll, nominatorThreshold, electionScoreStats, stakingStats, doRebagSingle } from './services';
+import { doRebagAll, nominatorThreshold, electionScoreStats, stakingStats, doRebagSingle, canPutInFrontOf } from './services';
 import { getAccountFromEnvOrArgElseAlice, getApi } from './helpers';
 import { reapStash } from './services/reap_stash';
 import { chillOther } from './services/chill_other';
@@ -20,6 +20,15 @@ export interface HandlerArgs {
 
 	itemLimit?: number,
 	sizeLimit?: number,
+}
+
+export async function inFrontHandler({ws, target}: HandlerArgs): Promise<void> {
+	if (target === undefined) {
+		throw 'target must be defined'
+	}
+
+	const api = await getApi(ws);
+	await canPutInFrontOf(api, target);
 }
 
 export async function rebagHandler({ ws, sendTx, target, seed }: HandlerArgs): Promise<void> {

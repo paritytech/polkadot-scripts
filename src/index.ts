@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 import yargs from 'yargs';
-import { rebagHandler, electionScoreHandler, playgroundHandler, reapStashHandler, nominatorThreshHandler, chillOtherHandler, stateTrieMigrationHandler, stakingStatsHandler } from './handlers';
+import { rebagHandler, electionScoreHandler, playgroundHandler, reapStashHandler, nominatorThreshHandler, chillOtherHandler, stateTrieMigrationHandler, stakingStatsHandler, inFrontHandler } from './handlers';
 
 
 /**
@@ -28,6 +28,21 @@ async function main() {
 				global: true,
 			}
 		})
+		.command(
+			['in-front'],
+			'find an account the target account can be put in front of',
+			// @ts-ignore
+			(yargs) => {
+				return yargs.options({
+					target: {
+						alias: 't',
+						description: 'The target account to be checked',
+						demandOption: true,
+					},
+				});
+			},
+			inFrontHandler
+		)
 		.command(
 			['rebag'],
 			'check the bags list for rebag operations',
@@ -139,11 +154,11 @@ async function main() {
 }
 
 main()
-	.then(() => {
-		console.info('Exiting ...');
-		process.exit(0);
-	})
-	.catch(err => {
-		console.error(err);
-		process.exit(1);
-	});
+.then(() => {
+	console.info('Exiting ...');
+	process.exit(0);
+})
+.catch(err => {
+	console.error(err);
+	process.exit(1);
+});
