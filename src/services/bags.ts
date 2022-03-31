@@ -9,7 +9,6 @@ import { dryRun, dryRunMaybeSendAndFinalize, sendAndFinalize } from '../helpers'
 import { ApiDecoration } from "@polkadot/api/types";
 import { formatBalance } from "@polkadot/util"
 import { Option } from "@polkadot/types-codec";
-import { getApi } from '../helpers';
 
 interface Bag {
 	head: AccountId,
