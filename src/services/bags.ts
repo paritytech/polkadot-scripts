@@ -153,7 +153,10 @@ export async function needsPutInFrontOf(
 	while (maybeCurrentAccount.isSome) {
 		const currentNode = (await api.query.bagsList.listNodes(maybeCurrentAccount.unwrap())).unwrap();
 		const theirWeight = await correctWeightOf(currentNode, api);
-		if (ourWeight.gt(theirWeight)) {
+		if (currentNode.toHuman().id === node.toHuman().id) {
+			return undefined
+		}
+		else if (ourWeight.gt(theirWeight)) {
 			// we can go in front of them!
 			return maybeCurrentAccount.unwrap()
 		} else {
@@ -181,5 +184,19 @@ export async function doPutInFrontOf(api: ApiPromise, signer: KeyringPair, targe
 				process.stdout.write(`${ev.event.section}::${ev.event.method}`)
 			}
 		}
+	}
+}
+
+export async function canPutInFrontOf(api: ApiPromise, target: string): Promise<void> {
+	const targetAccount = api.createType('AccountId', target);
+	const targetNode = (await api.query.bagsList.listNodes(targetAccount)).unwrap();
+	const targetCurrentBagThreshold = targetNode.bagUpper;
+	const targetBag = (await api.query.bagsList.listBags(targetCurrentBagThreshold)).unwrap();
+
+	const maybeWeaker = await needsPutInFrontOf(api, targetNode, targetBag);
+	if (maybeWeaker === undefined) {
+		console.log("\nThe target account cannot be repositioned\n");
+	} else {
+		console.log(`\nThe target account can be put in front of ${maybeWeaker?.toHuman()}\n`);
 	}
 }
