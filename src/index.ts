@@ -154,11 +154,11 @@ async function main() {
 }
 
 main()
-.then(() => {
-	console.info('Exiting ...');
-	process.exit(0);
-})
-.catch(err => {
-	console.error(err);
-	process.exit(1);
-});
+	.then(() => {
+		console.info('Exiting ...');
+		process.exit(0);
+	})
+	.catch(err => {
+		console.error(err);
+		process.exit(1);
+	});
