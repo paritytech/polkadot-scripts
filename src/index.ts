@@ -2,6 +2,9 @@
 import yargs from 'yargs';
 import { rebagHandler, electionScoreHandler, playgroundHandler, reapStashHandler, nominatorThreshHandler, chillOtherHandler, stateTrieMigrationHandler, stakingStatsHandler, inFrontHandler } from './handlers';
 
+// Export all of the services so this codebase can be used as a library as well.
+export * from "./services"
+
 
 /**
  * Sample use of checking bags list but not sending a tx:

@@ -1,6 +1,3 @@
-export * from "./bags"
-export * from "./election_score_stats"
-
 import { ApiPromise } from "@polkadot/api";
 import BN from 'bn.js';
 import { AccountId32} from '@polkadot/types/interfaces';
@@ -127,3 +124,9 @@ export async function stakingStats(api: ApiPromise) {
 		console.log(`validator count: max intention: ${intentionMax} / max electable: ${electableMax} / max active: ${activeMax} `)
 	}
 }
+
+export * from "./bags"
+export * from "./election_score_stats"
+export * from "./chill_other"
+export * from  "./reap_stash"
+export * from  "./state_trie_migration"
