@@ -9,7 +9,7 @@
 		"update": "././node_modules/.bin/ncu -u && yarn",
 		"lint": "eslint . --ext .ts --fix",
 		"build": "./node_modules/.bin/rimraf ./build && ./node_modules/.bin/tsc --pretty",
-		"binary": "yarn run build && rimraf ./binaries && ./node_modules/.bin/nexe build/index.js --build -o binaries/polkadot-scripts"
+		"binary": "yarn run build && rimraf ./binaries && ./node_modules/.bin/nexe build/index.js --build -o binaries/polkadot-scripts --python=$(which python3)"
 	},
 	"author": "@kianenigma",
 	"license": "ISC",
@@ -31,7 +31,7 @@
 		"typescript": "4.5.5"
 	},
 	"dependencies": {
-		"@polkadot/api": "7.6.1",
+		"@polkadot/api": "8.2.1",
 		"axios": "^0.25.0",
 		"bn.js": "^5.2.0",
 		"yargs": "^17.3.1"
