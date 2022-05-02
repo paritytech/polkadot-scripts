@@ -17,13 +17,13 @@ interface Bag {
 	nodes: AccountId[],
 }
 
-async function correctWeightOf(node: PalletBagsListListNode, api: ApiDecoration<"promise">): Promise<BN> {
+export async function correctWeightOf(node: PalletBagsListListNode, api: ApiDecoration<"promise">): Promise<BN> {
 	const currentAccount = node.id;
 	const currentCtrl = (await api.query.staking.bonded(currentAccount)).unwrap();
 	return (await api.query.staking.ledger(currentCtrl)).unwrapOrDefault().active.toBn()
 }
 
-async function needsRebag(
+export async function needsRebag(
 	api: ApiDecoration<"promise">,
 	bagThresholds: BN[],
 	node: PalletBagsListListNode,
