@@ -50,5 +50,5 @@ export async function electionScoreStats(chain: string, api: ApiPromise, apiKey:
 	console.log(`${avg[1].toString()}, ${api.createType('Balance', avg[1]).toHuman()}`);
 	console.log(`${avg[2].toString()}, ${api.createType('Balance', avg[2]).toHuman()}`);
 
-	console.log(`current minimum untrusted score is ${(await api.query.electionProviderMultiPhase.minimumUntrustedScore()).unwrapOrDefault().map((x) => api.createType('Balance', x).toHuman())}`)
+	console.log(`current minimum untrusted score is ${(await api.query.electionProviderMultiPhase.minimumUntrustedScore()).unwrapOrDefault().toHuman()}`)
 }
