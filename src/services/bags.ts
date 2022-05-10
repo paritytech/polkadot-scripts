@@ -119,9 +119,9 @@ export async function doRebagAll(api: ApiPromise, signer: KeyringPair, sendTx: b
 	console.log(`📊 total count of nodes: ${counter}`);
 	console.log(`..of which ${needRebag.length} need a rebag`);
 	const counterOnchain = await finalizedApi.query.bagsList.counterForListNodes();
-	const nominatorsOnChain = await finalizedApi.query.staking.counterForNominators();
+	const votersOnChain = (await finalizedApi.query.staking.counterForNominators()).add(await finalizedApi.query.staking.counterForValidators());
 	assert.deepEqual(counter, counterOnchain.toNumber());
-	assert.deepEqual(counter, nominatorsOnChain.toNumber());
+	assert.deepEqual(counter, votersOnChain.toNumber());
 
 	const txsInner = needRebag.map((who) => api.tx.bagsList.rebag(who)).slice(0, count);
 	const tx = api.tx.utility.batchAll(txsInner);
