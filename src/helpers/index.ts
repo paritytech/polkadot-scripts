@@ -7,6 +7,7 @@ import { ApiDecoration } from '@polkadot/api/types';
 
 export * from './rpc'
 
+
 export async function getApi(ws: string): Promise<ApiPromise> {
 	const provider = new WsProvider(ws);
 	const api = await ApiPromise.create({
@@ -16,8 +17,19 @@ export async function getApi(ws: string): Promise<ApiPromise> {
 	return api
 }
 
+export async function getAtApi(ws: string, at: string): Promise<ApiDecoration<"promise">> {
+	const provider = new WsProvider(ws);
+	const api: ApiPromise = await ApiPromise.create({
+		provider,
+	});
+	const chain = (await api.rpc.system.chain()).toHuman();
+	const ss = api.registry.chainSS58;
+	console.log(`Connected to node: ${ws} ${chain} at ${at} [ss58: ${ss}]`)
+	return await api.at(at)
+}
+
 export function getAccount(seedOrPath: string | undefined, ss58: number | undefined): KeyringPair {
-	const keyring = new Keyring({ type: 'sr25519', ss58Format: ss58});
+	const keyring = new Keyring({ type: 'sr25519', ss58Format: ss58 });
 	console.log(`using seed or path: ${seedOrPath}`)
 	if (seedOrPath) {
 		let suriData;

@@ -45,10 +45,10 @@ export async function needsRebag(
 }
 
 export async function doRebagSingle(api: ApiPromise, signer: KeyringPair, target: string, sendTx: boolean): Promise<void> {
-	const node = (await api.query.bagsList.listNodes(target)).unwrap();
-	const bagThresholds = api.consts.bagsList.bagThresholds.map((x) => api.createType('Balance', x));
+	const node = (await api.query.voterList.listNodes(target)).unwrap();
+	const bagThresholds = api.consts.voterList.bagThresholds.map((x) => api.createType('Balance', x));
 	if (await needsRebag(api, bagThresholds, node)) {
-		const tx = api.tx.bagsList.rebag(node.id);
+		const tx = api.tx.voterList.rebag(node.id);
 		const maybeSubmit = await dryRunMaybeSendAndFinalize(api, tx, signer, sendTx);
 		if (maybeSubmit) {
 			const { success, included } = maybeSubmit
@@ -64,7 +64,7 @@ export async function doRebagSingle(api: ApiPromise, signer: KeyringPair, target
 export async function doRebagAll(api: ApiPromise, signer: KeyringPair, sendTx: boolean, count: number): Promise<void> {
 	let entries;
 	try {
-		entries = await api.query.bagsList.listBags.entries();
+		entries = await api.query.voterList.listBags.entries();
 	} catch  {
 		throw 'bags list does not appear to exist for this runtime'
 	}
@@ -73,7 +73,7 @@ export async function doRebagAll(api: ApiPromise, signer: KeyringPair, sendTx: b
 	const needRebag: AccountId[] = [];
 	const at = await api.rpc.chain.getFinalizedHead();
 	const finalizedApi = await api.at(at);
-	const bagThresholds = finalizedApi.consts.bagsList.bagThresholds.map((x) => api.createType('Balance', x));
+	const bagThresholds = finalizedApi.consts.voterList.bagThresholds.map((x) => api.createType('Balance', x));
 
 	entries.forEach(([key, bag]) => {
 		if (bag.isSome && bag.unwrap().head.isSome && bag.unwrap().tail.isSome) {
@@ -96,7 +96,7 @@ export async function doRebagAll(api: ApiPromise, signer: KeyringPair, sendTx: b
 		let current = head;
 		let cond = true
 		while (cond) {
-			const currentNode = (await finalizedApi.query.bagsList.listNodes(current)).unwrap();
+			const currentNode = (await finalizedApi.query.voterList.listNodes(current)).unwrap();
 			if (await needsRebag(finalizedApi, bagThresholds, currentNode)) {
 				needRebag.push(currentNode.id);
 			}
@@ -118,12 +118,12 @@ export async function doRebagAll(api: ApiPromise, signer: KeyringPair, sendTx: b
 
 	console.log(`📊 total count of nodes: ${counter}`);
 	console.log(`..of which ${needRebag.length} need a rebag`);
-	const counterOnchain = await finalizedApi.query.bagsList.counterForListNodes();
+	const counterOnchain = await finalizedApi.query.voterList.counterForListNodes();
 	const votersOnChain = (await finalizedApi.query.staking.counterForNominators()).add(await finalizedApi.query.staking.counterForValidators());
 	assert.deepEqual(counter, counterOnchain.toNumber());
 	assert.deepEqual(counter, votersOnChain.toNumber());
 
-	const txsInner = needRebag.map((who) => api.tx.bagsList.rebag(who)).slice(0, count);
+	const txsInner = needRebag.map((who) => api.tx.voterList.rebag(who)).slice(0, count);
 	const tx = api.tx.utility.batchAll(txsInner);
 	console.log((await tx.paymentInfo(signer)).toHuman());
 	const [success, result] = await dryRun(api, signer, tx);
@@ -151,7 +151,7 @@ export async function needsPutInFrontOf(
 	const ourWeight = await correctWeightOf(node, api);
 	let maybeCurrentAccount: Option<AccountId> = bag.head;
 	while (maybeCurrentAccount.isSome) {
-		const currentNode = (await api.query.bagsList.listNodes(maybeCurrentAccount.unwrap())).unwrap();
+		const currentNode = (await api.query.voterList.listNodes(maybeCurrentAccount.unwrap())).unwrap();
 		const theirWeight = await correctWeightOf(currentNode, api);
 		if (currentNode.toHuman().id === node.toHuman().id) {
 			return undefined
@@ -168,14 +168,14 @@ export async function needsPutInFrontOf(
 
 export async function doPutInFrontOf(api: ApiPromise, signer: KeyringPair, target: string): Promise<void> {
 	const targetAccount = api.createType('AccountId', target);
-	const targetNode = (await api.query.bagsList.listNodes(targetAccount)).unwrap();
+	const targetNode = (await api.query.voterList.listNodes(targetAccount)).unwrap();
 	const targetCurrentBagThreshold = targetNode.bagUpper;
-	const targetBag = (await api.query.bagsList.listBags(targetCurrentBagThreshold)).unwrap();
+	const targetBag = (await api.query.voterList.listBags(targetCurrentBagThreshold)).unwrap();
 
 	const maybeWeaker = await needsPutInFrontOf(api, targetNode, targetBag);
 
 	if (maybeWeaker) {
-		const tx = api.tx.bagsList.putInFrontOf(maybeWeaker);
+		const tx = api.tx.voterList.putInFrontOf(maybeWeaker);
 		const maybeSubmit = await dryRunMaybeSendAndFinalize(api, tx, signer, true);
 		if (maybeSubmit) {
 			const { success, included } = maybeSubmit
@@ -189,9 +189,9 @@ export async function doPutInFrontOf(api: ApiPromise, signer: KeyringPair, targe
 
 export async function canPutInFrontOf(api: ApiPromise, target: string): Promise<void> {
 	const targetAccount = api.createType('AccountId', target);
-	const targetNode = (await api.query.bagsList.listNodes(targetAccount)).unwrap();
+	const targetNode = (await api.query.voterList.listNodes(targetAccount)).unwrap();
 	const targetCurrentBagThreshold = targetNode.bagUpper;
-	const targetBag = (await api.query.bagsList.listBags(targetCurrentBagThreshold)).unwrap();
+	const targetBag = (await api.query.voterList.listBags(targetCurrentBagThreshold)).unwrap();
 
 	const maybeWeaker = await needsPutInFrontOf(api, targetNode, targetBag);
 	if (maybeWeaker === undefined) {

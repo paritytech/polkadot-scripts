@@ -2,7 +2,8 @@ import { ApiPromise } from "@polkadot/api";
 import BN from 'bn.js';
 import { AccountId32} from '@polkadot/types/interfaces';
 import { PalletStakingIndividualExposure } from '@polkadot/types/lookup'
-import "@polkadot/api-augment"
+import "@polkadot/api-augment/polkadot"
+import { ApiDecoration } from "@polkadot/api/types";
 
 export async function nominatorThreshold(api: ApiPromise) {
 	const DOT = 10000000000;
@@ -20,8 +21,9 @@ export async function nominatorThreshold(api: ApiPromise) {
 	console.log(`${n.filter(({ stake }) => stake.lt(t)).length} stashes are below ${api.createType('Balance', t).toHuman()}`);
 }
 
-export async function stakingStats(api: ApiPromise) {
-	const b = (x: BN): string => api.createType('Balance', x).toHuman()
+export async function stakingStats(api: ApiDecoration<"promise">, baseApi: ApiPromise) {
+	// Hack to make things work for now.
+	const b = (x: BN): string => baseApi.createType('Balance', x).toHuman()
 	const stakeOf = async (stash: string) => {
 		// all stashes must have a controller ledger, and a ledger.
 		const controller = (await api.query.staking.bonded(stash)).unwrap();
@@ -30,18 +32,18 @@ export async function stakingStats(api: ApiPromise) {
 	}
 	/// Returns the minimum in the entire bags list.
 	const traverseNominatorBags = async (until: number): Promise<[AccountId32, number]> => {
-		const bagThresholds = api.consts.bagsList.bagThresholds.map((x) => api.createType('Balance', x));
+		const bagThresholds = api.consts.voterList.bagThresholds.map((x) => baseApi.createType('Balance', x));
 		let taken = 0;
-		let next: AccountId32 = api.createType('AccountId', []);
+		let next: AccountId32 = baseApi.createType('AccountId', []);
 		for (const threshold of bagThresholds.reverse()) {
-			const maybeBag = await api.query.bagsList.listBags(threshold.toBn());
+			const maybeBag = await api.query.voterList.listBags(threshold.toBn());
 			let reached = false;
 			if (maybeBag.isSome && maybeBag.unwrap().head.isSome) {
 				const head = maybeBag.unwrap().head.unwrap();
 				next = head;
 				let cond = true;
 				while (cond) {
-					const nextNode = await api.query.bagsList.listNodes(next);
+					const nextNode = await api.query.voterList.listNodes(next);
 					if (nextNode.isSome && nextNode.unwrap().next.isSome) {
 						next = nextNode.unwrap().next.unwrap();
 						taken += 1;
@@ -72,7 +74,11 @@ export async function stakingStats(api: ApiPromise) {
 
 	})
 
-	const [minNominatorInBags] = await traverseNominatorBags(api.consts.electionProviderMultiPhase.maxElectingVoters.toNumber());
+
+	const [minNominatorInBags] =
+		api.consts.electionProviderMultiPhase.maxElectingVoters ?
+			await traverseNominatorBags(api.consts.electionProviderMultiPhase.maxElectingVoters.toNumber()) :
+			Array.from(assignments).sort()[0]
 
 	// nominator stake
 	{
@@ -122,6 +128,29 @@ export async function stakingStats(api: ApiPromise) {
 
 		console.log(`validator count: intentions: ${intentionCount} / electable: ${electableCount} / active: ${activeCount}`)
 		console.log(`validator count: max intention: ${intentionMax} / max electable: ${electableMax} / max active: ${activeMax} `)
+	}
+
+	// misc stake related stuff
+	{
+		const totalIssuance = await api.query.balances.totalIssuance();
+		const totalActiveStake = await api.query.staking.erasTotalStake(currentEra);
+
+		const validatorTotalStake =
+			(await Promise.all(
+				(await api.query.staking.validators.entries())
+					.map(async ([validator, _prefs]) => await stakeOf(validator.args[0].toString()))
+			)).reduce((acc, x) => acc = acc.add(x))
+		const validatorActiveStake = stakers.map((x) => x[1].own.toBn()).reduce((acc, x) => acc = acc.add(x))
+		const nominatorTotalStake =
+			(await Promise.all(
+				(await api.query.staking.nominators.entries())
+					.map(async ([nominator, _target]) => await stakeOf(nominator.args[0].toString()))
+			)).reduce((acc, x) => acc = acc.add(x));
+		const nominatorActiveStake = Array.from(assignments.values()).reduce((acc, x) => acc = acc.add(x));
+		const totalStaked = validatorTotalStake.add(nominatorTotalStake);
+		console.log(`total issuance ${b(totalIssuance)} / staked ${b(totalStaked)} (${totalStaked.mul(new BN(100)).div(totalIssuance)}%) / active staked ${b(totalActiveStake)} (${totalActiveStake.mul(new BN(100)).div(totalIssuance)}%)`)
+		console.log(`validator total stake = ${b(validatorTotalStake)} / validatorActiveStake = ${b(validatorActiveStake)}`)
+		console.log(`nominator total stake = ${b(nominatorTotalStake)} / validatorActiveStake = ${b(nominatorActiveStake)}`)
 	}
 }
 

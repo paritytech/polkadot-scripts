@@ -100,7 +100,22 @@ async function main() {
 		// @ts-ignore
 		.command(['noms-thresh'], 'Get number of stashes below threshold (needs improvement)', {}, nominatorThreshHandler)
 		// @ts-ignore
-		.command(['staking-stats'], 'Basic statistics of the staking limits', {}, stakingStatsHandler)
+		.command(
+			['staking-stats'],
+			'Basic statistics of the staking limits',
+			// @ts-ignore
+			(yargs) => {
+				return yargs.options({
+					at: {
+						description: 'Block number at which to run the analysis',
+						demandOption: false,
+						default: false,
+						string: true,
+					}
+				});
+			},
+			stakingStatsHandler
+		)
 		.command(
 			['election-score'],
 			'Get stats on recent election scores',

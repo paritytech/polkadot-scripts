@@ -2,12 +2,10 @@
 // relevant services with them.
 
 import { doRebagAll, nominatorThreshold, electionScoreStats, stakingStats, doRebagSingle, canPutInFrontOf } from './services';
-import { getAccountFromEnvOrArgElseAlice, getApi } from './helpers';
+import { getAccountFromEnvOrArgElseAlice, getApi, getAtApi } from './helpers';
 import { reapStash } from './services/reap_stash';
 import { chillOther } from './services/chill_other';
 import { stateTrieMigration } from './services/state_trie_migration';
-import "@polkadot/api-augment"
-import "@polkadot/types-augment"
 
 /// TODO: split this per command, it is causing annoyance.
 export interface HandlerArgs {
@@ -17,6 +15,7 @@ export interface HandlerArgs {
 	noDryRun?: boolean,
 	target?: string
 	seed?: string,
+	at?: string,
 
 	itemLimit?: number,
 	sizeLimit?: number,
@@ -117,11 +116,12 @@ export async function stateTrieMigrationHandler({ ws, seed, count, itemLimit, si
 }
 
 export async function stakingStatsHandler(args: HandlerArgs): Promise<void> {
-	const api = await getApi(args.ws);
-	await stakingStats(api);
+	const api = await getAtApi(args.ws, args.at || "");
+	const baseApi = await getApi(args.ws);
+	await stakingStats(api, baseApi);
 	// lastly, for the sake of completeness, call into the service that fetches the election score
 	// medians.
-	await electionScoreHandler(args);
+	// await electionScoreHandler(args);
 }
 
 export async function playgroundHandler({ ws }: HandlerArgs): Promise<void> {
