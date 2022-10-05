@@ -1,36 +1,39 @@
-import { readFileSync } from 'fs'
-import { KeyringPair } from "@polkadot/keyring/types";
-import { ApiPromise, Keyring, WsProvider} from '@polkadot/api';
+import { readFileSync } from 'fs';
+import { KeyringPair } from '@polkadot/keyring/types';
+import { ApiPromise, Keyring, WsProvider } from '@polkadot/api';
 import { BN } from '@polkadot/util';
 import { HandlerArgs } from '../handlers';
 import { ApiDecoration } from '@polkadot/api/types';
 
-export * from './rpc'
-
+export * from './rpc';
 
 export async function getApi(ws: string): Promise<ApiPromise> {
 	const provider = new WsProvider(ws);
 	const api = await ApiPromise.create({
-		provider,
+		provider
 	});
-	console.log(`Connected to node: ${ws} ${(await api.rpc.system.chain()).toHuman()} [ss58: ${api.registry.chainSS58}]`)
-	return api
+	console.log(
+		`Connected to node: ${ws} ${(await api.rpc.system.chain()).toHuman()} [ss58: ${
+			api.registry.chainSS58
+		}]`
+	);
+	return api;
 }
 
-export async function getAtApi(ws: string, at: string): Promise<ApiDecoration<"promise">> {
+export async function getAtApi(ws: string, at: string): Promise<ApiDecoration<'promise'>> {
 	const provider = new WsProvider(ws);
 	const api: ApiPromise = await ApiPromise.create({
-		provider,
+		provider
 	});
 	const chain = (await api.rpc.system.chain()).toHuman();
 	const ss = api.registry.chainSS58;
-	console.log(`Connected to node: ${ws} ${chain} at ${at} [ss58: ${ss}]`)
-	return await api.at(at)
+	console.log(`Connected to node: ${ws} ${chain} at ${at} [ss58: ${ss}]`);
+	return await api.at(at);
 }
 
 export function getAccount(seedOrPath: string | undefined, ss58: number | undefined): KeyringPair {
 	const keyring = new Keyring({ type: 'sr25519', ss58Format: ss58 });
-	console.log(`using seed or path: ${seedOrPath}`)
+	console.log(`using seed or path: ${seedOrPath}`);
 	if (seedOrPath) {
 		let suriData;
 		try {
@@ -40,16 +43,21 @@ export function getAccount(seedOrPath: string | undefined, ss58: number | undefi
 			suriData = seedOrPath;
 		}
 
-		return keyring.addFromUri(suriData)
+		return keyring.addFromUri(suriData);
 	}
 
-	console.info("creating Alice dev account.")
+	console.info('creating Alice dev account.');
 	return keyring.addFromUri('//Alice');
 }
 
-export async function getAccountFromEnvOrArgElseAlice(api: ApiPromise, arg?: string): Promise<KeyringPair> {
-	const account = getAccount(arg || process.env["SEED"], api.registry.chainSS58);
-	console.log(`📣 using account ${account.address}, info ${await api.query.system.account(account.address)}`)
+export async function getAccountFromEnvOrArgElseAlice(
+	api: ApiPromise,
+	arg?: string
+): Promise<KeyringPair> {
+	const account = getAccount(arg || process.env['SEED'], api.registry.chainSS58);
+	console.log(
+		`📣 using account ${account.address}, info ${await api.query.system.account(account.address)}`
+	);
 	return account;
 }
 
@@ -58,7 +66,7 @@ export async function binarySearchStorageChange<T>(
 	low: BN,
 	high: BN,
 	targetValue: T,
-	getter: (api: ApiDecoration<"promise">) => Promise<T>,
+	getter: (api: ApiDecoration<'promise'>) => Promise<T>
 ): Promise<void> {
 	/*
 
@@ -83,32 +91,38 @@ export async function binarySearchStorageChange<T>(
 	await binarySearchStorageChange( { ws }, low, high, targetValue, getValue);
 	*/
 	const provider = new WsProvider(ws);
-	const api = await ApiPromise.create({provider});
-	console.log(`Connected to node: ${ws} ${(await api.rpc.system.chain()).toHuman()} [ss58: ${api.registry.chainSS58}]`)
+	const api = await ApiPromise.create({ provider });
+	console.log(
+		`Connected to node: ${ws} ${(await api.rpc.system.chain()).toHuman()} [ss58: ${
+			api.registry.chainSS58
+		}]`
+	);
 
 	// the assumption is that `getValue` at `high` will return `targetValue`. At some point in the
 	// past it was set, and we are looking for that block.
 
 	const getValueAt = async (nowNumber: BN) => {
 		const nowHash = await api.rpc.chain.getBlockHash(nowNumber);
-		const nowApi = await api.at(nowHash)
+		const nowApi = await api.at(nowHash);
 		return await getter(nowApi);
 	};
 
-	let cond = true
+	let cond = true;
 	while (cond) {
 		const nowNumber = low.add(high.sub(low).div(new BN(2)));
-		console.log(`trying [${low} ${high}] => ${nowNumber}`)
+		console.log(`trying [${low} ${high}] => ${nowNumber}`);
 		const nowValue = await getValueAt(nowNumber);
 
 		if (nowValue === targetValue) {
-			high = nowNumber
+			high = nowNumber;
 		} else {
-			low = nowNumber
+			low = nowNumber;
 		}
-		if (low.sub(high).abs().lte(new BN(1))) { cond = false }
+		if (low.sub(high).abs().lte(new BN(1))) {
+			cond = false;
+		}
 	}
 
-	console.log(`desired value @#${low} => ${await getValueAt(low)}`)
-	console.log(`desired value @#${high} => ${await getValueAt(high)}`)
+	console.log(`desired value @#${low} => ${await getValueAt(low)}`);
+	console.log(`desired value @#${high} => ${await getValueAt(high)}`);
 }

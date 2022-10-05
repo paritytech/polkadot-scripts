@@ -1,7 +1,14 @@
 // CLI command handlers. Responsible for gather all command inputs and calling the
 // relevant services with them.
 
-import { doRebagAll, nominatorThreshold, electionScoreStats, stakingStats, doRebagSingle, canPutInFrontOf } from './services';
+import {
+	doRebagAll,
+	nominatorThreshold,
+	electionScoreStats,
+	stakingStats,
+	doRebagSingle,
+	canPutInFrontOf
+} from './services';
 import { getAccountFromEnvOrArgElseAlice, getApi, getAtApi } from './helpers';
 import { reapStash } from './services/reap_stash';
 import { chillOther } from './services/chill_other';
@@ -11,19 +18,19 @@ import { stateTrieMigration } from './services/state_trie_migration';
 export interface HandlerArgs {
 	ws: string;
 	sendTx?: boolean;
-	count?: number,
-	noDryRun?: boolean,
-	target?: string
-	seed?: string,
-	at?: string,
+	count?: number;
+	noDryRun?: boolean;
+	target?: string;
+	seed?: string;
+	at?: string;
 
-	itemLimit?: number,
-	sizeLimit?: number,
+	itemLimit?: number;
+	sizeLimit?: number;
 }
 
-export async function inFrontHandler({ws, target}: HandlerArgs): Promise<void> {
+export async function inFrontHandler({ ws, target }: HandlerArgs): Promise<void> {
 	if (target === undefined) {
-		throw 'target must be defined'
+		throw 'target must be defined';
 	}
 
 	const api = await getApi(ws);
@@ -32,20 +39,20 @@ export async function inFrontHandler({ws, target}: HandlerArgs): Promise<void> {
 
 export async function rebagHandler({ ws, sendTx, target, seed }: HandlerArgs): Promise<void> {
 	if (sendTx === undefined) {
-		throw 'sendTx must be a true or false'
+		throw 'sendTx must be a true or false';
 	}
 	if (target === undefined) {
-		target = 'all'
+		target = 'all';
 	}
 
 	function isNumeric(str: string) {
 		// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 		// @ts-ignore
-		return !isNaN(str) && !isNaN(parseFloat(str))
+		return !isNaN(str) && !isNaN(parseFloat(str));
 	}
 
 	const api = await getApi(ws);
-	const account = await getAccountFromEnvOrArgElseAlice(api, seed)
+	const account = await getAccountFromEnvOrArgElseAlice(api, seed);
 	if (target == 'all') {
 		console.log(`rebagging all accounts`);
 		await doRebagAll(api, account, sendTx, Number.POSITIVE_INFINITY);
@@ -54,25 +61,30 @@ export async function rebagHandler({ ws, sendTx, target, seed }: HandlerArgs): P
 		console.log(`rebagging up to ${count} accounts`);
 		await doRebagAll(api, account, sendTx, count);
 	} else {
-		console.log(`rebagging account ${target}`)
+		console.log(`rebagging account ${target}`);
 		await doRebagSingle(api, account, target, sendTx);
 	}
 }
 
-export async function chillOtherHandler({ ws, sendTx, count, noDryRun, seed }: HandlerArgs): Promise<void> {
+export async function chillOtherHandler({
+	ws,
+	sendTx,
+	count,
+	noDryRun,
+	seed
+}: HandlerArgs): Promise<void> {
 	if (sendTx === undefined) {
-		throw 'sendTx must be a true or false'
+		throw 'sendTx must be a true or false';
 	}
 	if (count === undefined) {
-		count = -1
+		count = -1;
 	}
 	if (noDryRun === undefined) {
-		noDryRun = false
+		noDryRun = false;
 	}
 
-
 	const api = await getApi(ws);
-	const account = await getAccountFromEnvOrArgElseAlice(api, seed)
+	const account = await getAccountFromEnvOrArgElseAlice(api, seed);
 	await chillOther(api, account, sendTx, noDryRun, count);
 }
 
@@ -84,7 +96,7 @@ export async function nominatorThreshHandler({ ws }: HandlerArgs): Promise<void>
 export async function electionScoreHandler({ ws }: HandlerArgs): Promise<void> {
 	const api = await getApi(ws);
 
-	const apiKey = process.env['API'] || "DEFAULT_KEY";
+	const apiKey = process.env['API'] || 'DEFAULT_KEY';
 	console.log(`using api key: ${apiKey}`);
 
 	const chainName = await api.rpc.system.chain();
@@ -93,20 +105,26 @@ export async function electionScoreHandler({ ws }: HandlerArgs): Promise<void> {
 
 export async function reapStashHandler({ ws, sendTx, count, seed }: HandlerArgs): Promise<void> {
 	if (sendTx === undefined) {
-		throw 'sendTx must be a true or false'
+		throw 'sendTx must be a true or false';
 	}
 	if (count === undefined) {
-		count = -1
+		count = -1;
 	}
 
 	const api = await getApi(ws);
-	const account = await getAccountFromEnvOrArgElseAlice(api, seed)
+	const account = await getAccountFromEnvOrArgElseAlice(api, seed);
 	await reapStash(api, account, sendTx, count);
 }
 
-export async function stateTrieMigrationHandler({ ws, seed, count, itemLimit, sizeLimit }: HandlerArgs): Promise<void> {
+export async function stateTrieMigrationHandler({
+	ws,
+	seed,
+	count,
+	itemLimit,
+	sizeLimit
+}: HandlerArgs): Promise<void> {
 	if (itemLimit === undefined || sizeLimit === undefined) {
-		throw 'itemLimit and sizeLimit mut be set.'
+		throw 'itemLimit and sizeLimit mut be set.';
 	}
 
 	const api = await getApi(ws);
@@ -116,7 +134,7 @@ export async function stateTrieMigrationHandler({ ws, seed, count, itemLimit, si
 }
 
 export async function stakingStatsHandler(args: HandlerArgs): Promise<void> {
-	const api = await getAtApi(args.ws, args.at || "");
+	const api = await getAtApi(args.ws, args.at || '');
 	const baseApi = await getApi(args.ws);
 	await stakingStats(api, baseApi);
 	// lastly, for the sake of completeness, call into the service that fetches the election score
@@ -147,13 +165,14 @@ export async function playgroundHandler({ ws }: HandlerArgs): Promise<void> {
 
 	const rangeStart = 100;
 	let currentHash = await api.rpc.chain.getFinalizedHead();
-	const ADDR = "0xasdasd";
+	const ADDR = '0xasdasd';
 	for (let x = rangeStart; x > rangeStart; x--) {
 		const nonceAtBlock = (await api.query.system.account.at(currentHash, ADDR)).nonce;
-		if (nonceAtBlock.eq(7)) { break; }
+		if (nonceAtBlock.eq(7)) {
+			break;
+		}
 		// go to the parent block's hash and check that.
-		const parentHash = (await api.rpc.chain.getBlock(currentHash)).block.header.parentHash
+		const parentHash = (await api.rpc.chain.getBlock(currentHash)).block.header.parentHash;
 		currentHash = parentHash;
 	}
-
 }
