@@ -110,11 +110,11 @@ async function main() {
 			},
 			chillOtherHandler
 		)
-		// @ts-ignore
 		.command(
 			['noms-thresh'],
 			'Get number of stashes below threshold (needs improvement)',
 			{},
+			// @ts-ignore
 			nominatorThreshHandler
 		)
 		// @ts-ignore

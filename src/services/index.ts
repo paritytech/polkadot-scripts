@@ -89,7 +89,7 @@ export async function stakingStats(api: ApiDecoration<'promise'>, baseApi: ApiPr
 
 	const [minNominatorInBags] = api.consts.electionProviderMultiPhase.maxElectingVoters
 		? await traverseNominatorBags(
-				api.consts.electionProviderMultiPhase.maxElectingVoters.toNumber()
+			api.consts.electionProviderMultiPhase.maxElectingVoters.toNumber()
 		  )
 		: Array.from(assignments).sort()[0];
 
