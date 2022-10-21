@@ -3,9 +3,11 @@ import { Option } from '@polkadot/types/';
 import { ApiPromise } from '@polkadot/api';
 import { dryRun, sendAndFinalize } from '../helpers';
 import { KeyringPair } from '@polkadot/keyring/types';
+import { ApiDecoration } from '@polkadot/api/types';
 
 export async function reapStash(
-	api: ApiPromise,
+	api: ApiDecoration<"promise">,
+	baseApi: ApiPromise,
 	account: KeyringPair,
 	sendTx: boolean,
 	txCount: number
@@ -29,7 +31,7 @@ export async function reapStash(
 			stale += 1;
 			toReap.push(stash);
 			console.log(
-				`🎣 ${ctrl.args[0] ? ctrl.args[0] : ctrl} is stale. ledger.total=${api
+				`🎣 ${ctrl.args[0] ? ctrl.args[0] : ctrl} is stale. ledger.total=${baseApi
 					.createType('Balance', total)
 					.toHuman()}.`
 			);
@@ -44,17 +46,17 @@ export async function reapStash(
 		}
 	}
 
-	const tx = api.tx.utility.batchAll(
+	const tx = baseApi.tx.utility.batchAll(
 		await Promise.all(
 			toReap.map(async (s) =>
-				api.tx.staking.reapStash(s, transformSpan(await api.query.staking.slashingSpans(s)))
+				baseApi.tx.staking.reapStash(s, transformSpan(await api.query.staking.slashingSpans(s)))
 			)
 		)
 	);
 
 	console.log(`${stale} (stale) / ${count} (total examined)`);
 
-	const [success, result] = await dryRun(api, account, tx);
+	const [success, result] = await dryRun(baseApi, account, tx);
 	if (success && sendTx) {
 		const { success, included } = await sendAndFinalize(tx, account);
 		console.log(`ℹ️ success = ${success}. Events =`);

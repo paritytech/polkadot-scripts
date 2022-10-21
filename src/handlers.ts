@@ -113,7 +113,8 @@ export async function reapStashHandler({ ws, sendTx, count, seed }: HandlerArgs)
 
 	const api = await getApi(ws);
 	const account = await getAccountFromEnvOrArgElseAlice(api, seed);
-	await reapStash(api, account, sendTx, count);
+	const atApi = await getAtApi(ws, (await api.rpc.chain.getFinalizedHead()).toString())
+	await reapStash(atApi, api, account, sendTx, count);
 }
 
 export async function stateTrieMigrationHandler({
