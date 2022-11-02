@@ -7,7 +7,9 @@ import {
 	electionScoreStats,
 	stakingStats,
 	doRebagSingle,
-	canPutInFrontOf
+	canPutInFrontOf,
+  doPoolsWithdrawalAll
+  //doPoolsWithdrawalSingle
 } from './services';
 import { getAccountFromEnvOrArgElseAlice, getApi, getAtApi } from './helpers';
 import { reapStash } from './services/reap_stash';
@@ -64,6 +66,36 @@ export async function rebagHandler({ ws, sendTx, target, seed }: HandlerArgs): P
 		console.log(`rebagging account ${target}`);
 		await doRebagSingle(api, account, target, sendTx);
 	}
+}
+
+export async function withdrawPoolsHandler({ws, sendTx, target, seed}: HandlerArgs): Promise<void> {
+	if (sendTx === undefined) {
+		throw 'sendTx must be a true or false';
+	}
+	if (target === undefined) {
+		target = 'all';
+	}
+
+	function isNumeric(str: string) {
+		// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+		// @ts-ignore
+		return !isNaN(str) && !isNaN(parseFloat(str));
+	}
+
+  const api = await getApi(ws);
+
+	const account = await getAccountFromEnvOrArgElseAlice(api, seed);
+
+  if (target == 'all') {
+     await doPoolsWithdrawalAll(api, account, sendTx, Number.POSITIVE_INFINITY);
+  } else if (isNumeric(target)) {
+    const count = Number(target);
+    console.log(`withdraw from unbonded pools up to ${count} chunks`);
+    // await doPoolsWithdrawalAll(api, account, sendTx, count);
+  } else {
+    console.log(`withdraw from unbonded pools for account ${target}`);
+    // await doPoolsWithdrawalSingle(api, account, target, sendTx);
+  }
 }
 
 export async function chillOtherHandler({

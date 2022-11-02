@@ -2,6 +2,7 @@
 import yargs from 'yargs';
 import {
 	rebagHandler,
+  withdrawPoolsHandler,
 	electionScoreHandler,
 	playgroundHandler,
 	reapStashHandler,
@@ -57,6 +58,31 @@ async function main() {
 			},
 			inFrontHandler
 		)
+
+    .command(
+      ['withdraw_pools'],
+      'withdraws outstanding unbonded funds from nomination pools',
+      // @ts-ignore
+      (yargs) => {
+        return yargs.options({
+          sendTx: {
+            alias: 'T',
+            description: 'Whether or not to send a withdraw tx.',
+            boolean: true,
+            demandOption: false,
+            default: false,
+          },
+          target: {
+            alias: 't',
+            description: 'Who to target. Accepted values are "all", a number, or s specific "ss58" account id',
+            demandOption: false,
+            default: 'all',
+        }
+      });
+      },
+      withdrawPoolsHandler
+    )
+
 		.command(
 			['rebag'],
 			'check the bags list for rebag operations',

@@ -210,3 +210,4 @@ export * from './election_score_stats';
 export * from './chill_other';
 export * from './reap_stash';
 export * from './state_trie_migration';
+export * from './pools_withdrawal';
