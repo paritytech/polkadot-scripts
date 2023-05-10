@@ -65,7 +65,7 @@ export async function binarySearchStorageChange<T>(
 	{ ws }: HandlerArgs,
 	low: BN,
 	high: BN,
-	targetValue: T,
+	comp: (t: T) => boolean,
 	getter: (api: ApiDecoration<'promise'>) => Promise<T>
 ): Promise<void> {
 	/*
@@ -110,14 +110,15 @@ export async function binarySearchStorageChange<T>(
 	let cond = true;
 	while (cond) {
 		const nowNumber = low.add(high.sub(low).div(new BN(2)));
-		console.log(`trying [${low} ${high}] => ${nowNumber}`);
 		const nowValue = await getValueAt(nowNumber);
+		console.log(`trying [${low} ${high}] => ${nowNumber} => value: ${nowValue}`);
 
-		if (nowValue === targetValue) {
-			high = nowNumber;
-		} else {
+		if (comp(nowValue)) {
 			low = nowNumber;
+		} else {
+			high = nowNumber;
 		}
+
 		if (low.sub(high).abs().lte(new BN(1))) {
 			cond = false;
 		}

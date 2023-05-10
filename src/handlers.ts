@@ -9,10 +9,13 @@ import {
 	doRebagSingle,
 	canPutInFrontOf
 } from './services';
-import { getAccountFromEnvOrArgElseAlice, getApi, getAtApi } from './helpers';
+import { binarySearchStorageChange, getAccountFromEnvOrArgElseAlice, getApi, getAtApi } from './helpers';
 import { reapStash } from './services/reap_stash';
 import { chillOther } from './services/chill_other';
 import { stateTrieMigration } from './services/state_trie_migration';
+import { BN } from 'bn.js';
+import { ApiDecoration } from '@polkadot/api/types';
+import { locale } from 'yargs';
 
 /// TODO: split this per command, it is causing annoyance.
 export interface HandlerArgs {
@@ -145,35 +148,22 @@ export async function stakingStatsHandler(args: HandlerArgs): Promise<void> {
 
 export async function playgroundHandler({ ws }: HandlerArgs): Promise<void> {
 	const api = await getApi(ws);
-	// const chain = (await api.rpc.system.chain()).toString().toLowerCase();
-	// const limit = api.createType('Balance', chain == "polkadot" ? new BN(500 * Math.pow(10, 10)) : new BN(1 * Math.pow(10, 12)));
-	// const lessPromise = (await api.query.staking.validators.keys())
-	// 	.map((arg) => arg.args[0])
-	// 	.map(async (stash) => {
-	// 		const ctrl = await api.query.staking.bonded(stash);
-	// 		const ledger = await api.query.staking.ledger(ctrl.unwrap());
-	// 		const active = ledger.unwrap().active.toBn();
-	// 		return active.lt(limit.toBn());
-	// 	})
-	// const less = (await Promise.all(lessPromise));
-	// console.log(`num validators with less than ${limit.toHuman()}: ${less.filter(x => x).length} / ${(await api.query.staking.validators.keys()).length}`);
 
-	// if (chain == "kusama") {
-	// 	const all = (await api.query.staking.nominators.entries());
-	// 	const more = all.map((x) => x[1]).map((n) => n.unwrapOrDefault().targets.length).filter((x) => x > 16);
-	// 	console.log(`num nominators using more than 16 votes ${more.length} / ${all.length}`)
-	// }
+	// const stakers = await api.query.staking.ledger.entries();
+	// console.log(stakers.length);
+	// console.log(stakers.map(([c, l]) => [c.args[0], l.unwrap().stash]).filter(([x, y]) => x.eq(y)).length)
 
-	const rangeStart = 100;
-	let currentHash = await api.rpc.chain.getFinalizedHead();
-	const ADDR = '0xasdasd';
-	for (let x = rangeStart; x > rangeStart; x--) {
-		const nonceAtBlock = (await api.query.system.account.at(currentHash, ADDR)).nonce;
-		if (nonceAtBlock.eq(7)) {
-			break;
-		}
-		// go to the parent block's hash and check that.
-		const parentHash = (await api.rpc.chain.getBlock(currentHash)).block.header.parentHash;
-		currentHash = parentHash;
-	}
+	const locks = await (await api.query.balances.locks.entries()).map(([_, l]) => Array.from(l)).flat();
+	const vesting = locks.filter((l) => l.id.toHuman() == "vesting ");
+	console.log(vesting.length);
+
+	// const threshold = new BN(100).mul(new BN(10).pow(new BN(10))); // 100 DOT
+	// const nominators = (await api.query.staking.nominators.entries()).map(([n, _]) => n.args[0]);
+	// console.log(nominators.length)
+	// const chilled = await Promise.all(nominators.map(async (n) => {
+	// 	const controller = (await api.query.staking.bonded(n)).unwrap();
+	// 	const ledger = (await api.query.staking.ledger(controller)).unwrap();
+	// 	return ledger.active.toBn().lt(threshold)
+	// }));
+	// console.log(chilled.filter((x) => x).length)
 }
