@@ -13,9 +13,12 @@ import { binarySearchStorageChange, getAccountFromEnvOrArgElseAlice, getApi, get
 import { reapStash } from './services/reap_stash';
 import { chillOther } from './services/chill_other';
 import { stateTrieMigration } from './services/state_trie_migration';
-import { BN } from 'bn.js';
+import BN from 'bn.js';
 import { ApiDecoration } from '@polkadot/api/types';
+import { ApiPromise } from '@polkadot/api';
 import { locale } from 'yargs';
+import { AccountId } from "@polkadot/types/interfaces"
+import { Vec, U8, StorageKey, Option } from "@polkadot/types/"
 
 /// TODO: split this per command, it is causing annoyance.
 export interface HandlerArgs {
@@ -146,16 +149,34 @@ export async function stakingStatsHandler(args: HandlerArgs): Promise<void> {
 	// await electionScoreHandler(args);
 }
 
+export async function scrapePrefixKeys(prefix: string, api: ApiPromise): Promise<string[]> {
+	let lastKey = null
+	const keys: string[] = [];
+	while (true) {
+		const pageKeys: any = await api.rpc.state.getKeysPaged(prefix, 1000, lastKey);
+		keys.push(...pageKeys.map((k: StorageKey) => k.toHex()));
+		if (pageKeys.length < 1000) {
+			break;
+		}
+		lastKey = pageKeys[pageKeys.length - 1].toHex()
+	}
+
+	return keys
+}
+
 export async function playgroundHandler({ ws }: HandlerArgs): Promise<void> {
 	const api = await getApi(ws);
 
-	// const stakers = await api.query.staking.ledger.entries();
-	// console.log(stakers.length);
-	// console.log(stakers.map(([c, l]) => [c.args[0], l.unwrap().stash]).filter(([x, y]) => x.eq(y)).length)
-
-	const locks = await (await api.query.balances.locks.entries()).map(([_, l]) => Array.from(l)).flat();
-	const vesting = locks.filter((l) => l.id.toHuman() == "vesting ");
-	console.log(vesting.length);
+	// block when the account staked --should have correct ledger in here.
+	const low =  new BN(1515158);
+	// fairly recent block, but before Ankan's sudo.
+	const high = new BN(18145115);
+	const getter = async (api: ApiDecoration<"promise">) => {
+		const ledger = await api.query.staking.ledger("5G3rej8vFLEMVcJPeMBnaxRBATtPEj3cXkSPDT2iEgbkMgbs");
+		return ledger.unwrapOrDefault().total.toBn();
+	}
+	const target = (t: BN): boolean => !t.isZero();
+	await binarySearchStorageChange( { ws }, low, high, target, getter);
 
 	// const threshold = new BN(100).mul(new BN(10).pow(new BN(10))); // 100 DOT
 	// const nominators = (await api.query.staking.nominators.entries()).map(([n, _]) => n.args[0]);
