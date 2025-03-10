@@ -1,8 +1,8 @@
+import '@polkadot/api-augment';
 import { ApiPromise } from '@polkadot/api';
 import BN from 'bn.js';
 import { AccountId32 } from '@polkadot/types/interfaces';
-import { PalletStakingIndividualExposure } from '@polkadot/types/lookup';
-import '@polkadot/api-augment/polkadot';
+import { SpStakingIndividualExposure } from '@polkadot/types/lookup';
 import { ApiDecoration } from '@polkadot/api/types';
 
 export async function nominatorThreshold(api: ApiPromise) {
@@ -81,18 +81,20 @@ export async function stakingStats(api: ApiDecoration<'promise'>, baseApi: ApiPr
 		.map((x) => x[1].others)
 		.flat(1)
 		.forEach((x) => {
-			const nominator = (x as PalletStakingIndividualExposure).who.toString();
-			const amount = (x as PalletStakingIndividualExposure).value;
+			const nominator = (x as SpStakingIndividualExposure).who.toString();
+			const amount = (x as SpStakingIndividualExposure).value;
 			const val = assignments.get(nominator);
 			assignments.set(nominator, val ? amount.toBn().add(val) : amount.toBn());
 		});
 
-	const [minNominatorInBags] = api.consts.electionProviderMultiPhase.maxElectingVoters
+	const minNominatorInBags = api.consts.electionProviderMultiPhase.maxElectingVoters
 		? await traverseNominatorBags(
+			// @ts-ignore
 			api.consts.electionProviderMultiPhase.maxElectingVoters.toNumber()
-		  )
+		)
 		: Array.from(assignments).sort()[0];
 
+	console.log(`min nominator in bags: ${minNominatorInBags}`);
 	// nominator stake
 	{
 		const minIntentionThreshold = await api.query.staking.minNominatorBond();

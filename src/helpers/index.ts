@@ -27,6 +27,10 @@ export async function getAtApi(ws: string, at: string): Promise<ApiDecoration<'p
 	});
 	const chain = (await api.rpc.system.chain()).toHuman();
 	const ss = api.registry.chainSS58;
+	if (at == '') {
+		console.log("no --at provided, using finalized head");
+		at = (await api.rpc.chain.getFinalizedHead()).toString();
+	}
 	console.log(`Connected to node: ${ws} ${chain} at ${at} [ss58: ${ss}]`);
 	return await api.at(at);
 }

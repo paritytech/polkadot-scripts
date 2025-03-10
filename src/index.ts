@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
+
+import '@polkadot/api-augment';
 import yargs from 'yargs';
 import {
 	rebagHandler,

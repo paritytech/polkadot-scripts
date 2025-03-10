@@ -27,27 +27,28 @@ export async function correctWeightOf(
 }
 
 export async function needsRebag(
-	api: ApiDecoration<'promise'>,
+	api: ApiPromise,
 	bagThresholds: BN[],
 	node: PalletBagsListListNode
 ): Promise<boolean> {
+	const balance = (x: BN) => api.createType('Balance', x).toHuman();
 	const currentWeight = await correctWeightOf(node, api);
 	const canonicalUpper =
-		bagThresholds.find((t) => t.gt(currentWeight)) || new BN('18446744073709551615');
+		bagThresholds.find((t) => t.gte(currentWeight)) || new BN('18446744073709551615');
 	if (canonicalUpper.gt(node.bagUpper)) {
 		console.log(
-			`\t ☝️ ${node.id} needs a rebag from ${node.bagUpper.toHuman()} to higher ${formatBalance(
+			`\t ☝️ ${node.id} needs a rebag from ${balance(node.bagUpper)} to higher ${balance(
 				canonicalUpper
-			)} [real weight = ${formatBalance(currentWeight)}]`
+			)} [real weight = ${balance(currentWeight)}]`
 		);
 		return true;
 	} else if (canonicalUpper.lt(node.bagUpper)) {
 		// this should ALMOST never happen: we handle all rebags to lower accounts, except if a
 		// slash happens.
 		console.log(
-			`\t 👇 ☢️ ${node.id} needs a rebag from ${node.bagUpper.toHuman()} to lower ${formatBalance(
+			`\t 👇 ☢️ ${node.id} needs a rebag from ${balance(node.bagUpper)} to lower ${balance(
 				canonicalUpper
-			)} [real weight = ${formatBalance(currentWeight)}]`
+			)} [real weight = ${balance(currentWeight)}]`
 		);
 		return true;
 	} else {
@@ -122,8 +123,8 @@ export async function doRebagAll(
 		let current = head;
 		let cond = true;
 		while (cond) {
-			const currentNode = (await finalizedApi.query.voterList.listNodes(current)).unwrap();
-			if (await needsRebag(finalizedApi, bagThresholds, currentNode)) {
+			const currentNode = (await api.query.voterList.listNodes(current)).unwrap();
+			if (await needsRebag(api, bagThresholds, currentNode)) {
 				needRebag.push(currentNode.id);
 			}
 			nodes.push(currentNode.id);
@@ -160,6 +161,7 @@ export async function doRebagAll(
 	assert.deepEqual(counter, votersOnChain.toNumber());
 
 	const txsInner = needRebag.map((who) => api.tx.voterList.rebag(who)).slice(0, count);
+	console.log("creating batch tx with", txsInner.length, "txs");
 	const tx = api.tx.utility.batchAll(txsInner);
 	console.log((await tx.paymentInfo(signer)).toHuman());
 	const [success, result] = await dryRun(api, signer, tx);

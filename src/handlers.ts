@@ -14,11 +14,15 @@ import { reapStash } from './services/reap_stash';
 import { chillOther } from './services/chill_other';
 import { stateTrieMigration } from './services/state_trie_migration';
 import BN from 'bn.js';
-import { ApiDecoration } from '@polkadot/api/types';
+import { ApiDecoration, SubmittableExtrinsic } from '@polkadot/api/types';
 import { ApiPromise } from '@polkadot/api';
 import { locale } from 'yargs';
 import { AccountId } from "@polkadot/types/interfaces"
+import { PalletStakingRewardDestination } from "@polkadot/types/lookup"
 import { Vec, U8, StorageKey, Option } from "@polkadot/types/"
+import { signFakeWithApi, signFake } from '@acala-network/chopsticks-utils'
+import { sign } from 'crypto';
+
 
 /// TODO: split this per command, it is causing annoyance.
 export interface HandlerArgs {
@@ -141,6 +145,7 @@ export async function stateTrieMigrationHandler({
 }
 
 export async function stakingStatsHandler(args: HandlerArgs): Promise<void> {
+	console.log(args);
 	const api = await getAtApi(args.ws, args.at || '');
 	const baseApi = await getApi(args.ws);
 	await stakingStats(api, baseApi);
@@ -164,27 +169,46 @@ export async function scrapePrefixKeys(prefix: string, api: ApiPromise): Promise
 	return keys
 }
 
+export async function fakeSignForChopsticks(api: ApiPromise, sender: string | AccountId, tx: SubmittableExtrinsic<'promise'>): Promise<void> {
+	const account = await api.query.system.account(sender)
+	const options = {
+		nonce: account.nonce,
+		genesisHash: api.genesisHash,
+		runtimeVersion: api.runtimeVersion,
+		blockHash: api.genesisHash,
+	};
+	const mockSignature = new Uint8Array(64)
+	mockSignature.fill(0xcd)
+	mockSignature.set([0xde, 0xad, 0xbe, 0xef])
+	tx.signFake(sender, options)
+	tx.signature.set(mockSignature)
+}
+
 export async function playgroundHandler({ ws }: HandlerArgs): Promise<void> {
 	const api = await getApi(ws);
+	const stakers = await api.query.staking.ledger.entries();
+	const overstaked = []
+	for (const [key, staker] of stakers) {
+		const total = staker.unwrap().total;
+		const stash = staker.unwrap().stash;
+		const locked = await api.query.balances.locks(stash);
+		const stash_account = await api.query.system.account(stash);
+		const stash_free = stash_account.data.free;
+		const staking_locks = locked.filter(lock => lock.id.toString().trim() == '0x7374616b696e6720');
 
-	// block when the account staked --should have correct ledger in here.
-	const low =  new BN(1515158);
-	// fairly recent block, but before Ankan's sudo.
-	const high = new BN(18145115);
-	const getter = async (api: ApiDecoration<"promise">) => {
-		const ledger = await api.query.staking.ledger("5G3rej8vFLEMVcJPeMBnaxRBATtPEj3cXkSPDT2iEgbkMgbs");
-		return ledger.unwrapOrDefault().total.toBn();
+		if (staking_locks.length != 1) {
+			console.log(`Staker ${stash} has ${staking_locks.length} staking locks, free: ${stash_free}`);
+			overstaked.push({ staker: staker.unwrap(), locked: null, free: stash_free });
+			continue
+		}
+
+		const staking_lock = staking_locks[0];
+
+		if (staking_lock.amount.toBigInt() != total.toBigInt() || stash_free.toBigInt() < total.toBigInt()) {
+			console.log(`Stash: ${stash}, Total: ${total}, Locked: ${staking_lock.amount}, free: ${stash_free}, diff: ${(total.toBigInt() - stash_free.toBigInt()) / BigInt(10e12)}`);
+			overstaked.push({ staker: staker, locked: staking_lock.amount, free: stash_free });
+		}
 	}
-	const target = (t: BN): boolean => !t.isZero();
-	await binarySearchStorageChange( { ws }, low, high, target, getter);
 
-	// const threshold = new BN(100).mul(new BN(10).pow(new BN(10))); // 100 DOT
-	// const nominators = (await api.query.staking.nominators.entries()).map(([n, _]) => n.args[0]);
-	// console.log(nominators.length)
-	// const chilled = await Promise.all(nominators.map(async (n) => {
-	// 	const controller = (await api.query.staking.bonded(n)).unwrap();
-	// 	const ledger = (await api.query.staking.ledger(controller)).unwrap();
-	// 	return ledger.active.toBn().lt(threshold)
-	// }));
-	// console.log(chilled.filter((x) => x).length)
+	console.log(overstaked.length)
 }
