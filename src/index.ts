@@ -11,7 +11,8 @@ import {
 	chillOtherHandler,
 	stateTrieMigrationHandler,
 	stakingStatsHandler,
-	inFrontHandler
+	inFrontHandler,
+	commandCenterHandler
 } from './handlers';
 
 // Export all of the services so this codebase can be used as a library as well.
@@ -193,6 +194,8 @@ async function main() {
 			},
 			stateTrieMigrationHandler
 		)
+		// @ts-ignore
+		.command(['ahm-command-center'], 'ahm', {}, commandCenterHandler)
 		// @ts-ignore
 		.command(['playground'], 'random stuff', {}, playgroundHandler)
 		.parse();

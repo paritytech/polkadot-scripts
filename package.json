@@ -36,6 +36,7 @@
 		"@polkadot/api": "15.7.2",
 		"axios": "^1.8.2",
 		"bn.js": "^5.2.1",
+		"stdout-update": "^4.0.1",
 		"yargs": "^17.7.2"
 	}
 }

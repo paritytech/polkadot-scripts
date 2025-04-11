@@ -21,12 +21,14 @@ import { AccountId } from "@polkadot/types/interfaces"
 import { PalletStakingRewardDestination } from "@polkadot/types/lookup"
 import { Vec, U8, StorageKey, Option } from "@polkadot/types/"
 import { signFakeWithApi, signFake } from '@acala-network/chopsticks-utils'
-import { sign } from 'crypto';
+import { IEvent, IEventData } from '@polkadot/types/types';
+import UpdateManager from 'stdout-update';
 
 
 /// TODO: split this per command, it is causing annoyance.
 export interface HandlerArgs {
 	ws: string;
+	ws2?: string;
 	sendTx?: boolean;
 	count?: number;
 	noDryRun?: boolean;
@@ -154,6 +156,115 @@ export async function stakingStatsHandler(args: HandlerArgs): Promise<void> {
 	// await electionScoreHandler(args);
 }
 
+export async function commandCenterHandler(): Promise<void> {
+	const rcApi = await getApi("ws://localhost:9955");
+	const ahApi = await getApi("ws://localhost:9966");
+
+	const manager = UpdateManager.getInstance();
+	// manager.hook();
+
+	let rcOutput: string[] = []
+	let ahOutput: string[] = []
+	const rcEvents: string[] = []
+	const ahEvents: string[] = []
+
+
+	rcApi.rpc.chain.subscribeFinalizedHeads(async (header) => {
+		// --- RC:
+		// current session index
+		const index = await rcApi.query.session.currentIndex();
+		// whether the session pallet has a queued validator set within it
+		const hasQueuedInSession = await rcApi.query.session.queuedChanged();
+		// the range of historical session data that we have in the RC.
+		const historicalRange = await rcApi.query.historical.storedRange();
+
+
+		// whether there is a validator set queued in ah-client. for this we need to display only the id and the length of the set.
+		const hasQueuedInClient = await rcApi.query.stakingNextAhClient.validatorSet();
+		// whether we have already passed a new validator set to session, and therefore in the next session rotation we want to pass this id to AH.
+		const hasNextActiveId = await rcApi.query.stakingNextAhClient.nextSessionChangesValidators();
+		// whether the AhClient pallet is blocked or not, useful for migration signal from the fellowship.
+		const isBlocked = await rcApi.query.stakingNextAhClient.isBlocked();
+
+		// Events that we are interested in from RC:
+		const eventsOfInterest = (await rcApi.query.system.events())
+			.map((e) => e.event)
+			.filter((e) => {
+				const ahClientEvents = (e: IEventData) => e.section == 'stakingNextAhClient';
+				const sessionEvents = (e: IEventData) => e.section == 'session' || e.section == 'historical';
+				return ahClientEvents(e.data) || sessionEvents(e.data);
+			})
+			.map((e) => `${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`);
+		rcEvents.push(...eventsOfInterest);
+		rcOutput = [
+			`RC:`,
+			`finalized block ${header.number}`,
+			`RC.session: index=${index}, hasQueuedInSession=${hasQueuedInSession}, historicalRange=${historicalRange}`,
+			`RC.stakingNextAhClient: hasQueuedInClient=${hasQueuedInClient}, hasNextActiveId=${hasNextActiveId}, isBlocked=${isBlocked}`,
+			`RC.events: ${rcEvents}`,
+			`----`
+		]
+
+		manager.update(rcOutput.concat(ahOutput))
+	})
+
+	// AH:
+	ahApi.rpc.chain.subscribeFinalizedHeads(async (header) => {
+		// the current planned era
+		const currentEra = await ahApi.query.staking.currentEra();
+		// the active era
+		const activeEra = await ahApi.query.staking.activeEra();
+		// the starting index of the active era
+		const erasStartSessionIndex = await ahApi.query.staking.erasStartSessionIndex(activeEra.unwrap().index)
+
+		// the basic state of the election provider
+		const phase = await ahApi.query.multiBlock.currentPhase();
+		const round = await ahApi.query.multiBlock.round();
+		const snapshotRange = (await ahApi.query.multiBlock.pagedVoterSnapshotHash.entries()).map(([k, v]) => k.args[0]).sort();
+		const queuedScore = await ahApi.query.multiBlockVerifier.queuedSolutionScore();
+		const signedSubmissions = await ahApi.query.multiBlockSigned.sortedScores(round);
+
+		// Events that we are interested in from RC:
+		const eventsOfInterest = (await ahApi.query.system.events())
+			.map((e) => e.event)
+			.filter((e) => {
+				const election = (e: IEventData) => e.section == 'multiBlock' || e.section == 'multiBlockVerifier' || e.section == 'multiBlockSigned' || e.section == 'multiBlockUnsigned';
+				const rcClient = (e: IEventData) => e.section == 'stakingNextRcClient';
+				const staking = (e: IEventData) => e.section == 'staking' && (e.method == 'EraPaid' || e.method == 'SessionRotated' || e.method == 'PagedElectionProceeded');
+				return election(e.data) || rcClient(e.data) || staking(e.data);
+			})
+			.map((e) => `${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`);
+		ahEvents.push(...eventsOfInterest);
+
+		ahOutput = [
+			`AH:`,
+			`finalized block ${header.number}`,
+			`AH.staking: currentEra=${currentEra}, activeEra=${activeEra}, erasStartSessionIndex(${activeEra.unwrap().index})=${erasStartSessionIndex}`,
+			`multiBlock: phase=${phase}, round=${round}, snapshotRange=${snapshotRange}, queuedScore=${queuedScore}, signedSubmissions=${signedSubmissions}`,
+			`AH.events: ${ahEvents}`,
+			`----`,
+		]
+
+		manager.update(rcOutput.concat(ahOutput))
+	});
+
+
+	// Prevent the function from returning by creating a promise that never resolves
+	return new Promise<void>((resolve) => {
+		// Set up signal handlers for graceful shutdown
+		process.on('SIGINT', () => {
+			console.log('Received SIGINT. Shutting down...');
+			process.exit(0);
+		});
+
+		process.on('SIGTERM', () => {
+			console.log('Received SIGTERM. Shutting down...');
+			process.exit(0);
+		});
+		console.log('Command center running. Press Ctrl+C to exit.');
+	});
+}
+
 export async function scrapePrefixKeys(prefix: string, api: ApiPromise): Promise<string[]> {
 	let lastKey = null
 	const keys: string[] = [];
@@ -184,31 +295,39 @@ export async function fakeSignForChopsticks(api: ApiPromise, sender: string | Ac
 	tx.signature.set(mockSignature)
 }
 
-export async function playgroundHandler({ ws }: HandlerArgs): Promise<void> {
+export async function ExposureStats({ ws }: HandlerArgs): Promise<void> {
 	const api = await getApi(ws);
-	const stakers = await api.query.staking.ledger.entries();
-	const overstaked = []
-	for (const [key, staker] of stakers) {
-		const total = staker.unwrap().total;
-		const stash = staker.unwrap().stash;
-		const locked = await api.query.balances.locks(stash);
-		const stash_account = await api.query.system.account(stash);
-		const stash_free = stash_account.data.free;
-		const staking_locks = locked.filter(lock => lock.id.toString().trim() == '0x7374616b696e6720');
 
-		if (staking_locks.length != 1) {
-			console.log(`Staker ${stash} has ${staking_locks.length} staking locks, free: ${stash_free}`);
-			overstaked.push({ staker: staker.unwrap(), locked: null, free: stash_free });
-			continue
+	const era = (await api.query.staking.currentEra()).unwrap();
+	const overviews = (await api.query.staking.erasStakersOverview.entries(era)).map(([key, value]) => {
+		const stash = key.args[1].toHuman();
+		const metadata = value.unwrap();
+		return { stash, metadata }
+	});
+	console.log(`overviews/exposed validators: ${overviews.length}`);
+	const sumNominators = overviews.map(({ metadata}) => metadata.nominatorCount.toNumber()).reduce((a, b) => a + b, 0);
+	console.log(`sumNominators: ${sumNominators}`);
+}
+
+export async function controllerStats({ ws }: HandlerArgs): Promise<void> {
+	const api = await getApi(ws);
+	const bonded = await api.query.staking.bonded.entries();
+
+	let same = 0;
+	let different = 0;
+	for (const [key, value] of bonded) {
+		const stash = key.args[0].toHuman();
+		const ctrl = value.unwrap().toHuman();
+		if (stash == ctrl) {
+			same += 1
 		}
-
-		const staking_lock = staking_locks[0];
-
-		if (staking_lock.amount.toBigInt() != total.toBigInt() || stash_free.toBigInt() < total.toBigInt()) {
-			console.log(`Stash: ${stash}, Total: ${total}, Locked: ${staking_lock.amount}, free: ${stash_free}, diff: ${(total.toBigInt() - stash_free.toBigInt()) / BigInt(10e12)}`);
-			overstaked.push({ staker: staker, locked: staking_lock.amount, free: stash_free });
+		else {
+			different += 1
 		}
 	}
+	console.log(`bonded: same=${same}, different=${different}`)
+}
 
-	console.log(overstaked.length)
+export async function playgroundHandler(args: HandlerArgs): Promise<void> {
+	await ExposureStats(args);
 }
