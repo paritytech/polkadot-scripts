@@ -21,7 +21,7 @@ import { AccountId } from "@polkadot/types/interfaces"
 import { PalletStakingRewardDestination } from "@polkadot/types/lookup"
 import { Vec, U8, StorageKey, Option } from "@polkadot/types/"
 import { signFakeWithApi, signFake } from '@acala-network/chopsticks-utils'
-import { IEvent, IEventData } from '@polkadot/types/types';
+import { IEvent, IEventData, Observable } from '@polkadot/types/types';
 import UpdateManager from 'stdout-update';
 
 
@@ -157,8 +157,8 @@ export async function stakingStatsHandler(args: HandlerArgs): Promise<void> {
 }
 
 export async function commandCenterHandler(): Promise<void> {
-	const rcApi = await getApi("ws://localhost:9955");
-	const ahApi = await getApi("ws://localhost:9966");
+	const rcApi = await getApi("ws://localhost:9945");
+	const ahApi = await getApi("ws://localhost:9946");
 
 	const manager = UpdateManager.getInstance();
 	// manager.hook();
@@ -295,6 +295,55 @@ export async function fakeSignForChopsticks(api: ApiPromise, sender: string | Ac
 	tx.signature.set(mockSignature)
 }
 
+export async function isExposed(ws: string, stash: string): Promise<void> {
+	const api = await getApi(ws);
+	const balance = (x: BN) => api.createType('Balance', x).toHuman();
+	const era = (await api.query.staking.currentEra()).unwrap();
+	console.log(`era: ${era}`);
+	const overviews = (await api.query.staking.erasStakersOverview.entries(era)).map(([key, value]) => {
+		const stash = key.args[1].toHuman();
+		const metadata = value.unwrap();
+		return { stash, metadata }
+	});
+	console.log(`MaxExposurePageSize: ${api.consts.staking.maxExposurePageSize}`);
+	console.log(`overviews/exposed validators: ${overviews.length}`);
+	for (let overview of overviews) {
+		console.log(`stash: ${overview.stash}, page_count: ${overview.metadata.pageCount.toNumber()}, nominators: ${overview.metadata.nominatorCount.toNumber()}`);
+	}
+	const sumNominators = overviews.map(({ metadata}) => metadata.nominatorCount.toNumber()).reduce((a, b) => a + b, 0);
+	console.log(`sumNominators: ${sumNominators}`);
+
+	// find them in the bags-list
+	console.log(`searching for ${stash} in the bags-list`);
+	const node = await api.query.voterList.listNodes(stash);
+	if (node.isSome) {
+		const nodeData = node.unwrap();
+		console.log(`found in bags-list: ${nodeData.toString()}`);
+		console.log(`score: ${balance(nodeData.score)}`);
+		console.log(`bagUpper: ${balance(nodeData.bagUpper)}`);
+	} else {
+		console.log(`not found in bags-list`);
+	}
+
+	// search for stash in all pages of the exposure in the current era.
+	const all_exposures = [];
+	for (let overview of overviews) {
+		for (let page = 0; page < overview.metadata.pageCount.toNumber(); page++) {
+			let page_exposure = (await api.query.staking.erasStakersPaged(era, overview.stash, page)).unwrap();
+			let backing = page_exposure.others.find((x) => {
+				return x.who.toString() == stash
+			});
+			all_exposures.push(backing);
+		}
+	}
+
+	all_exposures.forEach((exposure) => {
+		if (exposure) {
+			console.log(`stash: ${exposure.who.toString()}, exposure: ${exposure.value.toString()}`);
+		}
+	});
+}
+
 export async function ExposureStats({ ws }: HandlerArgs): Promise<void> {
 	const api = await getApi(ws);
 
@@ -329,5 +378,5 @@ export async function controllerStats({ ws }: HandlerArgs): Promise<void> {
 }
 
 export async function playgroundHandler(args: HandlerArgs): Promise<void> {
-	await ExposureStats(args);
+	await isExposed(args.ws, "5CMHncn3PkANkyXXcjvd7hN1yhuqbkntofr8o9uncqENCiAU")
 }
