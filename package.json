@@ -37,6 +37,7 @@
 		"axios": "^1.8.2",
 		"bn.js": "^5.2.1",
 		"stdout-update": "^4.0.1",
+		"strip-ansi": "^7.1.0",
 		"yargs": "^17.7.2"
 	}
 }

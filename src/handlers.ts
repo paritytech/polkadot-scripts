@@ -9,7 +9,7 @@ import {
 	doRebagSingle,
 	canPutInFrontOf
 } from './services';
-import { binarySearchStorageChange, getAccountFromEnvOrArgElseAlice, getApi, getAtApi } from './helpers';
+import { binarySearchStorageChange, getAccount, getAccountFromEnvOrArgElseAlice, getApi, getAtApi, sendAndFinalize } from './helpers';
 import { reapStash } from './services/reap_stash';
 import { chillOther } from './services/chill_other';
 import { stateTrieMigration } from './services/state_trie_migration';
@@ -20,6 +20,7 @@ import { locale } from 'yargs';
 import { AccountId } from "@polkadot/types/interfaces"
 import { PalletStakingRewardDestination } from "@polkadot/types/lookup"
 import { Vec, U8, StorageKey, Option } from "@polkadot/types/"
+import { u8aToHex } from "@polkadot/util"
 import { signFakeWithApi, signFake } from '@acala-network/chopsticks-utils'
 import { IEvent, IEventData, Observable } from '@polkadot/types/types';
 import UpdateManager from 'stdout-update';
@@ -310,7 +311,7 @@ export async function isExposed(ws: string, stash: string): Promise<void> {
 	for (let overview of overviews) {
 		console.log(`stash: ${overview.stash}, page_count: ${overview.metadata.pageCount.toNumber()}, nominators: ${overview.metadata.nominatorCount.toNumber()}`);
 	}
-	const sumNominators = overviews.map(({ metadata}) => metadata.nominatorCount.toNumber()).reduce((a, b) => a + b, 0);
+	const sumNominators = overviews.map(({ metadata }) => metadata.nominatorCount.toNumber()).reduce((a, b) => a + b, 0);
 	console.log(`sumNominators: ${sumNominators}`);
 
 	// find them in the bags-list
@@ -354,7 +355,7 @@ export async function ExposureStats({ ws }: HandlerArgs): Promise<void> {
 		return { stash, metadata }
 	});
 	console.log(`overviews/exposed validators: ${overviews.length}`);
-	const sumNominators = overviews.map(({ metadata}) => metadata.nominatorCount.toNumber()).reduce((a, b) => a + b, 0);
+	const sumNominators = overviews.map(({ metadata }) => metadata.nominatorCount.toNumber()).reduce((a, b) => a + b, 0);
 	console.log(`sumNominators: ${sumNominators}`);
 }
 
@@ -378,5 +379,88 @@ export async function controllerStats({ ws }: HandlerArgs): Promise<void> {
 }
 
 export async function playgroundHandler(args: HandlerArgs): Promise<void> {
-	await isExposed(args.ws, "5CMHncn3PkANkyXXcjvd7hN1yhuqbkntofr8o9uncqENCiAU")
+	// await isExposed(args.ws, "5CMHncn3PkANkyXXcjvd7hN1yhuqbkntofr8o9uncqENCiAU")
+	console.log(`args: ${JSON.stringify(args)}`);
+	let rcApi = await getAtApi("wss://westend-rpc.dwellir.com", "0xd653600210afe2227318a26209faeb7f7899c7c901718d41d9a03881044d71f2");
+	// let rcApiNow = await getApi("wss://westend-rpc.dwellir.com");
+	// let rcApi = await getApi("ws://localhost:9999");
+	let rcApiNow = await getApi("ws://localhost:8000");
+
+	// let ahApi = await getApi("wss://sys.ibp.network/asset-hub-westend");
+
+	// let bn = (await api.query.system.number()).toNumber();
+	// while  (true) {
+	// 	let h = await api.rpc.chain.getBlockHash(bn);
+	// 	console.log(`block number: ${bn} - hash ${h}`);
+
+	// 	let apiAt = await getAtApi(args.ws, h.toHex());
+	// 	let mq = await apiAt.query.dmp.downwardMessageQueues(1000);
+	// 	//@ts-ignore
+	// 	console.log(`mq length: ${mq.length}`);
+	// 	let sums = {}
+	// 	//@ts-ignore
+	// 	mq.forEach((x) => {
+	// 		let b = x.sentAt;
+	// 		let l = x.msg.length;
+	// 		//@ts-ignore
+	// 		if (sums[b] === undefined) {
+	// 			//@ts-ignore
+	// 			sums[b] = 0;
+	// 		}
+	// 		//@ts-ignore
+	// 		sums[b] += l;
+	// 		//@ts-ignore
+	// 	})
+	// 	console.log(sums);
+	// 	bn -= 1;
+	// }
+
+	let ledgersRc = await rcApi.query.staking.ledger.entries();
+	let ledgerTxs = 0;
+	let bondedRc = await rcApi.query.staking.bonded.entries();
+	let bondedTxs = 0;
+
+	console.log(`ledgersRc: ${ledgersRc.length}`);
+	console.log(`bondedRc: ${bondedRc.length}`);
+
+	let chunkSize = 512;
+	type KeyValue = [string, string];
+
+	// ---- ledger
+	let ledgerBatchTx = [];
+	for (let i = 0; i < ledgersRc.length; i += chunkSize) {
+		let chunk = ledgersRc.slice(i, i + chunkSize);
+		let kvs: KeyValue[] = []
+		for (let j = 0; j < chunk.length; j++) {
+			let [k, v] = chunk[j];
+			ledgerTxs += 1;
+			kvs.push([k.toHex(), v.toHex()])
+		}
+		const tx = rcApiNow.tx.system.setStorage(kvs)
+		ledgerBatchTx.push(tx);
+	}
+	console.log(`ledgerBatchTx: ${ledgerBatchTx.length}`);
+	console.log(`ledgerTxs: ${ledgerTxs}`);
+
+	// ---- bonded
+	let bondedBatchTx = [];
+	for (let i = 0; i < bondedRc.length; i += chunkSize) {
+		let chunk = bondedRc.slice(i, i + chunkSize);
+		let kvs: KeyValue[] = []
+		for (let j = 0; j < chunk.length; j++) {
+			let [k, v] = chunk[j];
+			bondedTxs += 1;
+			kvs.push([k.toHex(), v.toHex()])
+		}
+		const tx = rcApiNow.tx.system.setStorage(kvs)
+		bondedBatchTx.push(tx);
+	}
+	console.log(`bondedBatchTx: ${bondedBatchTx.length}`);
+	console.log(`bondedTxs: ${bondedTxs}`);
+
+	let signer = getAccount(undefined, 1);
+	for (let tx of ledgerBatchTx) {
+		const sudo = rcApiNow.tx.sudo.sudo(tx);
+		await sendAndFinalize(sudo, signer)
+	}
 }
