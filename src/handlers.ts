@@ -430,6 +430,7 @@ export async function playgroundHandler(args: HandlerArgs): Promise<void> {
 	console.log(`bondedTxs: ${bondedTxs}`);
 
 	let signer = getAccount(undefined, 1);
+	// -------------------- ^^^ insert seed here to use a different account
 	for (let tx of ledgerBatchTx) {
 		const sudo = rcApiNow.tx.sudo.sudo(tx);
 		await sendAndFinalize(sudo, signer)
