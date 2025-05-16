@@ -386,35 +386,6 @@ export async function playgroundHandler(args: HandlerArgs): Promise<void> {
 	// let rcApi = await getApi("ws://localhost:9999");
 	let rcApiNow = await getApi("ws://localhost:8000");
 
-	// let ahApi = await getApi("wss://sys.ibp.network/asset-hub-westend");
-
-	// let bn = (await api.query.system.number()).toNumber();
-	// while  (true) {
-	// 	let h = await api.rpc.chain.getBlockHash(bn);
-	// 	console.log(`block number: ${bn} - hash ${h}`);
-
-	// 	let apiAt = await getAtApi(args.ws, h.toHex());
-	// 	let mq = await apiAt.query.dmp.downwardMessageQueues(1000);
-	// 	//@ts-ignore
-	// 	console.log(`mq length: ${mq.length}`);
-	// 	let sums = {}
-	// 	//@ts-ignore
-	// 	mq.forEach((x) => {
-	// 		let b = x.sentAt;
-	// 		let l = x.msg.length;
-	// 		//@ts-ignore
-	// 		if (sums[b] === undefined) {
-	// 			//@ts-ignore
-	// 			sums[b] = 0;
-	// 		}
-	// 		//@ts-ignore
-	// 		sums[b] += l;
-	// 		//@ts-ignore
-	// 	})
-	// 	console.log(sums);
-	// 	bn -= 1;
-	// }
-
 	let ledgersRc = await rcApi.query.staking.ledger.entries();
 	let ledgerTxs = 0;
 	let bondedRc = await rcApi.query.staking.bonded.entries();
@@ -460,6 +431,10 @@ export async function playgroundHandler(args: HandlerArgs): Promise<void> {
 
 	let signer = getAccount(undefined, 1);
 	for (let tx of ledgerBatchTx) {
+		const sudo = rcApiNow.tx.sudo.sudo(tx);
+		await sendAndFinalize(sudo, signer)
+	}
+	for (let tx of bondedBatchTx) {
 		const sudo = rcApiNow.tx.sudo.sudo(tx);
 		await sendAndFinalize(sudo, signer)
 	}
