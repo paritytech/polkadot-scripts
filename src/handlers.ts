@@ -378,9 +378,7 @@ export async function controllerStats({ ws }: HandlerArgs): Promise<void> {
 	console.log(`bonded: same=${same}, different=${different}`)
 }
 
-export async function playgroundHandler(args: HandlerArgs): Promise<void> {
-	// await isExposed(args.ws, "5CMHncn3PkANkyXXcjvd7hN1yhuqbkntofr8o9uncqENCiAU")
-	console.log(`args: ${JSON.stringify(args)}`);
+export async function saveWahV1(args: HandlerArgs): Promise<void> {
 	let rcApi = await getAtApi("wss://westend-rpc.dwellir.com", "0xd653600210afe2227318a26209faeb7f7899c7c901718d41d9a03881044d71f2");
 	// let rcApiNow = await getApi("wss://westend-rpc.dwellir.com");
 	// let rcApi = await getApi("ws://localhost:9999");
@@ -439,4 +437,60 @@ export async function playgroundHandler(args: HandlerArgs): Promise<void> {
 		const sudo = rcApiNow.tx.sudo.sudo(tx);
 		await sendAndFinalize(sudo, signer)
 	}
+}
+
+export async function saveWahV2(args: HandlerArgs): Promise<void> {
+	const beforeMigApi = await getAtApi("wss://westend-rpc.dwellir.com", "0xd653600210afe2227318a26209faeb7f7899c7c901718d41d9a03881044d71f2");
+	const nowApi = await getApi("wss://westend-rpc.dwellir.com");
+	const nowWahApi = await getApi("wss://asset-hub-westend-rpc.dwellir.com");
+
+	// pallet, storage value key
+	const toSet = [
+		["staking", "validatorCount"],
+		["staking", "invulnerables"],
+
+		["staking", "minNominatorBond"],
+		["staking", "minValidatorBond"],
+		["staking", "minimumActiveStake"],
+
+		["staking", "maxValidatorsCount"],
+		["staking", "maxNominatorsCount"],
+
+		["staking", "currentEra"],
+		["staking", "activeEra"],
+		["staking", "bondedEras"],
+
+		["staking", "slashRewardFraction"],
+
+		["nominationPools", "totalValueLocked"],
+		["nominationPools", "minJoinBond"],
+		["nominationPools", "minCreateBond"],
+		["nominationPools", "maxPools"],
+		["nominationPools", "maxPoolMembers"],
+		["nominationPools", "globalMaxCommission"],
+		["nominationPools", "lastPoolId"],
+
+		["fastUnstake", "erasToCheckPerBlock"],
+
+		["referenda", "referendumCount"]
+	]
+
+	const kvs: [string, string][] = []
+	for (const [pallet, storage] of toSet) {
+		const beforeMigValue = await beforeMigApi.query[pallet][storage]()
+		// the key has to come from WAH, not Westend, although they are the same since pallet names are the same.
+		const key = nowWahApi.query[pallet][storage].key()
+		console.log(`before migration ${pallet}.${storage} (${key}): ${beforeMigValue.toString()}`);
+		kvs.push([key, beforeMigValue.toHex()])
+	}
+
+	// the system index of WAH is the one we want to xcm.
+	const tx = nowWahApi.tx.system.setStorage(kvs);
+	console.log("encoded call to submit via XCM sudo:", tx.toHex());
+	console.log("encoded call to submit via XCM sudo:", tx.inner.toHex());
+}
+
+export async function playgroundHandler(args: HandlerArgs): Promise<void> {
+	// await isExposed(args.ws, "5CMHncn3PkANkyXXcjvd7hN1yhuqbkntofr8o9uncqENCiAU")
+	await saveWahV2(args)
 }
