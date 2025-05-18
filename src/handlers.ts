@@ -486,8 +486,7 @@ export async function saveWahV2(args: HandlerArgs): Promise<void> {
 
 	// the system index of WAH is the one we want to xcm.
 	const tx = nowWahApi.tx.system.setStorage(kvs);
-	console.log("encoded call to submit via XCM sudo:", tx.toHex());
-	console.log("encoded call to submit via XCM sudo:", tx.inner.toHex());
+	console.log("encoded call to submit in WAH:", tx.inner.toHex());
 }
 
 export async function playgroundHandler(args: HandlerArgs): Promise<void> {
