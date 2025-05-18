@@ -480,11 +480,11 @@ export async function saveWahV2(args: HandlerArgs): Promise<void> {
 		const beforeMigValue = await beforeMigApi.query[pallet][storage]()
 		// the key has to come from WAH, not Westend, although they are the same since pallet names are the same.
 		const key = nowWahApi.query[pallet][storage].key()
-		console.log(`before migration ${pallet}.${storage} (${key}): ${beforeMigValue.toString()}`);
+		console.log(`before migration ${pallet}.${storage} (${key}): ${beforeMigValue.toString()} (${beforeMigValue.toHex()})`);
 		kvs.push([key, beforeMigValue.toHex()])
 	}
 
-	// the system index of WAH is the one we want to xcm.
+	// the system index of WAH is the one we want to use.
 	const tx = nowWahApi.tx.system.setStorage(kvs);
 	console.log("encoded call to submit in WAH:", tx.inner.toHex());
 }
