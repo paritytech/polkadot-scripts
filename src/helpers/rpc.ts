@@ -4,6 +4,7 @@ import { KeyringPair } from '@polkadot/keyring/types';
 import { EventRecord, ApplyExtrinsicResult } from '@polkadot/types/interfaces/';
 import { CodecHash } from '@polkadot/types/interfaces/runtime';
 import { ApiPromise } from '@polkadot/api';
+import { GenericExtrinsic } from '@polkadot/types';
 
 interface ISubmitResult {
 	hash: CodecHash;

@@ -20,7 +20,7 @@ import { locale } from 'yargs';
 import { AccountId } from "@polkadot/types/interfaces"
 import { PalletStakingRewardDestination } from "@polkadot/types/lookup"
 import { Vec, U8, StorageKey, Option } from "@polkadot/types/"
-import { u8aToHex } from "@polkadot/util"
+import { u8aToHex, numberToHex } from "@polkadot/util"
 import { signFakeWithApi, signFake } from '@acala-network/chopsticks-utils'
 import { IEvent, IEventData, Observable } from '@polkadot/types/types';
 import UpdateManager from 'stdout-update';
@@ -478,10 +478,11 @@ export async function saveWahV2(args: HandlerArgs): Promise<void> {
 	const kvs: [string, string][] = []
 	for (const [pallet, storage] of toSet) {
 		const beforeMigValue = await beforeMigApi.query[pallet][storage]()
+
 		// the key has to come from WAH, not Westend, although they are the same since pallet names are the same.
 		const key = nowWahApi.query[pallet][storage].key()
-		console.log(`before migration ${pallet}.${storage} (${key}): ${beforeMigValue.toString()} (${beforeMigValue.toHex()})`);
-		kvs.push([key, beforeMigValue.toHex()])
+		console.log(`before migration ${pallet}.${storage} (${key}): ${Number(beforeMigValue)} (${u8aToHex(beforeMigValue.toU8a())})`);
+		kvs.push([key, u8aToHex(beforeMigValue.toU8a())])
 	}
 
 	// the system index of WAH is the one we want to use.
@@ -489,7 +490,31 @@ export async function saveWahV2(args: HandlerArgs): Promise<void> {
 	console.log("encoded call to submit in WAH:", tx.inner.toHex());
 }
 
+export async function submitTxFromFile(args: HandlerArgs): Promise<void> {
+	// real
+	// const nowWahApi = await getApi("wss://asset-hub-westend-rpc.dwellir.com");
+	// local CS for testing
+	const nowWahApi = await getApi("ws://localhost:8000");
+	// read all files that have the name "call_*.txt" from the given dir
+	const dir = "../polkadot-sdk-2/cumulus/parachains/runtimes/assets/asset-hub-westend";
+	const fs = require('fs');
+	const path = require('path');
+	const files = fs.readdirSync(dir).filter((file: string) => file.startsWith("call_") && file.endsWith(".txt"));
+
+	console.log(`found ${files.length} files to submit:`)
+	for (const file of files) {
+		const filePath = path.join(dir, file);
+		const content = fs.readFileSync(filePath, 'utf8');
+		const call = nowWahApi.createType('Call', content);
+		const tx = nowWahApi.tx[call.section][call.method](...call.args);
+
+		let signer = getAccount(undefined, 1);
+		await sendAndFinalize(tx, signer)
+	}
+}
+
 export async function playgroundHandler(args: HandlerArgs): Promise<void> {
 	// await isExposed(args.ws, "5CMHncn3PkANkyXXcjvd7hN1yhuqbkntofr8o9uncqENCiAU")
-	await saveWahV2(args)
+	// await saveWahV2(args)
+	await submitTxFromFile(args)
 }
