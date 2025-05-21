@@ -496,7 +496,7 @@ export async function submitTxFromFile(args: HandlerArgs): Promise<void> {
 	// local CS for testing
 	const nowWahApi = await getApi("ws://localhost:8000");
 	// read all files that have the name "call_*.txt" from the given dir
-	const dir = "../polkadot-sdk-2/cumulus/parachains/runtimes/assets/asset-hub-westend";
+	const dir = "../assets";
 	const fs = require('fs');
 	const path = require('path');
 	const files = fs.readdirSync(dir).filter((file: string) => file.startsWith("call_") && file.endsWith(".txt"));
