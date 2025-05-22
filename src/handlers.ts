@@ -499,7 +499,11 @@ export async function submitTxFromFile(args: HandlerArgs): Promise<void> {
 	const dir = "../assets";
 	const fs = require('fs');
 	const path = require('path');
-	const files = fs.readdirSync(dir).filter((file: string) => file.startsWith("call_") && file.endsWith(".txt"));
+	// for submitting set storage calls.
+	const file_start = "call_";
+	// for submitting fix hold calls.
+	// const file_start = "fh_call_";
+	const files = fs.readdirSync(dir).filter((file: string) => file.startsWith(file_start) && file.endsWith(".txt"));
 
 	console.log(`found ${files.length} files to submit:`)
 	for (const file of files) {
