@@ -490,7 +490,7 @@ export async function saveWahV2(args: HandlerArgs): Promise<void> {
 	console.log("encoded call to submit in WAH:", tx.inner.toHex());
 }
 
-export async function submitTxFromFile(args: HandlerArgs, file_start: string): Promise<void> {
+export async function submitTxFromFile(args: HandlerArgs, fileStart: string): Promise<void> {
 	// real
 	// const nowWahApi = await getApi("wss://asset-hub-westend-rpc.dwellir.com");
 	// local CS for testing
@@ -499,7 +499,7 @@ export async function submitTxFromFile(args: HandlerArgs, file_start: string): P
 	const dir = "../assets";
 	const fs = require('fs');
 	const path = require('path');
-	const files = fs.readdirSync(dir).filter((file: string) => file.startsWith(file_start) && file.endsWith(".txt"));
+	const files = fs.readdirSync(dir).filter((file: string) => file.startsWith(fileStart) && file.endsWith(".txt"));
 
 	console.log(`found ${files.length} files to submit:`)
 	for (const file of files) {
