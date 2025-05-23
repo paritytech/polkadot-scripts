@@ -505,6 +505,7 @@ export async function deeplyNestedCall(args: HandlerArgs): Promise<void> {
 			call = api.tx.sudo.sudo(call);
 		}
 		console.log(`call with depth: ${depth}: ${call.toU8a().length} bytes`);
+		console.log(`hex call: ${call.toHex()}`);
 
 		await sendAndFinalize(call, signer);
 		depth ++;
@@ -537,17 +538,12 @@ export async function submitTxFromFile(args: HandlerArgs, fileStart: string): Pr
 export async function playgroundHandler(args: HandlerArgs): Promise<void> {
 	// await isExposed(args.ws, "5CMHncn3PkANkyXXcjvd7hN1yhuqbkntofr8o9uncqENCiAU")
 	// await saveWahV2(args)
-<<<<<<< HEAD
 	// await submitTxFromFile(args)
 	await deeplyNestedCall(args)
-||||||| 501f46e
-	await submitTxFromFile(args)
-=======
 
 	console.log("submitting sudo set storage txns");
 	await submitTxFromFile(args, "call_");
 
 	console.log("submitting sudo fix hold txns");
 	await submitTxFromFile(args, "fh_call_");
->>>>>>> eb6559610291807538e70646c77cc1f2f1be9218
 }
