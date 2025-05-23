@@ -490,6 +490,27 @@ export async function saveWahV2(args: HandlerArgs): Promise<void> {
 	console.log("encoded call to submit in WAH:", tx.inner.toHex());
 }
 
+export async function deeplyNestedCall(args: HandlerArgs): Promise<void> {
+	const api = await getApi(args.ws);
+	let depth = 250;
+	let signer = getAccount(undefined, 1);
+	const wrapInSomething = true;
+	while (true) {
+		let call = api.tx.system.remark("foo");
+		for (let i = 0; i < depth; i++) {
+			call = api.tx.utility.batch([call]);
+		}
+
+		if (wrapInSomething) {
+			call = api.tx.sudo.sudo(call);
+		}
+		console.log(`call with depth: ${depth}: ${call.toU8a().length} bytes`);
+
+		await sendAndFinalize(call, signer);
+		depth ++;
+	}
+}
+
 export async function submitTxFromFile(args: HandlerArgs): Promise<void> {
 	// real
 	// const nowWahApi = await getApi("wss://asset-hub-westend-rpc.dwellir.com");
@@ -516,5 +537,6 @@ export async function submitTxFromFile(args: HandlerArgs): Promise<void> {
 export async function playgroundHandler(args: HandlerArgs): Promise<void> {
 	// await isExposed(args.ws, "5CMHncn3PkANkyXXcjvd7hN1yhuqbkntofr8o9uncqENCiAU")
 	// await saveWahV2(args)
-	await submitTxFromFile(args)
+	// await submitTxFromFile(args)
+	await deeplyNestedCall(args)
 }
