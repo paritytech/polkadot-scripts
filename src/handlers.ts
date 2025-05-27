@@ -492,9 +492,9 @@ export async function saveWahV2(args: HandlerArgs): Promise<void> {
 
 export async function deeplyNestedCall(args: HandlerArgs): Promise<void> {
 	const api = await getApi(args.ws);
-	let depth = 250;
+	let depth = 253;
 	let signer = getAccount(undefined, 1);
-	const wrapInSomething = true;
+	const wrapInSomething = false;
 	while (true) {
 		let call = api.tx.system.remark("foo");
 		for (let i = 0; i < depth; i++) {
@@ -507,7 +507,11 @@ export async function deeplyNestedCall(args: HandlerArgs): Promise<void> {
 		console.log(`call with depth: ${depth}: ${call.toU8a().length} bytes`);
 		console.log(`hex call: ${call.toHex()}`);
 
-		await sendAndFinalize(call, signer);
+		try {
+			await sendAndFinalize(call, signer);
+		} catch (e) {
+			console.log(`failed to send call with depth: ${depth}: ${e}`);
+		}
 		depth ++;
 	}
 }
@@ -541,9 +545,9 @@ export async function playgroundHandler(args: HandlerArgs): Promise<void> {
 	// await submitTxFromFile(args)
 	await deeplyNestedCall(args)
 
-	console.log("submitting sudo set storage txns");
-	await submitTxFromFile(args, "call_");
+	// console.log("submitting sudo set storage txns");
+	// await submitTxFromFile(args, "call_");
 
-	console.log("submitting sudo fix hold txns");
-	await submitTxFromFile(args, "fh_call_");
+	// console.log("submitting sudo fix hold txns");
+	// await submitTxFromFile(args, "fh_call_");
 }
