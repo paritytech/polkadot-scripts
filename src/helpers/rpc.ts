@@ -65,6 +65,33 @@ export async function sendAndFinalize(
 	});
 }
 
+export async function sendAndAwaitInBlock(
+	tx: SubmittableExtrinsic<'promise', ISubmittableResult>,
+	signer: KeyringPair
+): Promise<ISubmitResult> {
+	return new Promise((resolve) => {
+		let success = false;
+		let included: EventRecord[] = [];
+		tx.signAndSend(signer, ({ events = [], status, dispatchError }) => {
+			if (status.isInBlock) {
+				success = dispatchError ? false : true;
+				console.log(
+					`📀 Transaction ${tx.meta.name}(..) included at blockHash ${status.asInBlock} [success = ${success}]`
+				);
+				included = [...events];
+				const hash = status.hash;
+				resolve({ success, hash, included, finalized: [] });
+			} else if (status.isBroadcast) {
+				console.log(`🚀 Transaction broadcasted.`);
+			} else if (status.isReady) {
+				// let's not be too noisy..
+			} else {
+				console.log(`🤷 Other status ${status}`);
+			}
+		});
+	});
+}
+
 export async function dryRun(
 	api: ApiPromise,
 	signer: KeyringPair,

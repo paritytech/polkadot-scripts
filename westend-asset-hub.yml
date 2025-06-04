@@ -4,8 +4,8 @@ block: ${env.WESTEND_ASSET_HUB_BLOCK_NUMBER}
 db: ./db.sqlite
 
 import-storage:
-  Sudo:
-    Key: 5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY
+  # Sudo:
+  #   Key: 5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY
   System:
     Account:
       -

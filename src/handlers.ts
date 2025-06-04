@@ -18,12 +18,13 @@ import { ApiDecoration, SubmittableExtrinsic } from '@polkadot/api/types';
 import { ApiPromise } from '@polkadot/api';
 import { locale } from 'yargs';
 import { AccountId } from "@polkadot/types/interfaces"
-import { PalletStakingRewardDestination } from "@polkadot/types/lookup"
+import { FrameSupportDispatchPerDispatchClassWeight, PalletStakingRewardDestination, SpWeightsWeightV2Weight } from "@polkadot/types/lookup"
 import { Vec, U8, StorageKey, Option } from "@polkadot/types/"
 import { u8aToHex, numberToHex } from "@polkadot/util"
 import { signFakeWithApi, signFake } from '@acala-network/chopsticks-utils'
 import { IEvent, IEventData, Observable } from '@polkadot/types/types';
 import UpdateManager from 'stdout-update';
+import { format } from 'path';
 
 
 /// TODO: split this per command, it is causing annoyance.
@@ -113,6 +114,7 @@ export async function electionScoreHandler({ ws }: HandlerArgs): Promise<void> {
 	console.log(`using api key: ${apiKey}`);
 
 	const chainName = await api.rpc.system.chain();
+
 	await electionScoreStats(chainName.toString().toLowerCase(), api, apiKey);
 }
 
@@ -157,17 +159,35 @@ export async function stakingStatsHandler(args: HandlerArgs): Promise<void> {
 	// await electionScoreHandler(args);
 }
 
+function colorize(text: string, colorCode: string): string {
+	return `\x1b[${colorCode}m${text}\x1b[0m`;
+}
+
+function bold(text: string): string {
+	return `\x1b[1m${text}\x1b[0m`;
+}
+
+function boldColorize(text: string, colorCode: string): string {
+	return `\x1b[1m\x1b[${colorCode}m${text}\x1b[0m`;
+}
+
 export async function commandCenterHandler(): Promise<void> {
-	const rcApi = await getApi("ws://localhost:9945");
-	const ahApi = await getApi("ws://localhost:9946");
+	// const rcApi = await getApi("ws://localhost:9945");
+	// const ahApi = await getApi("ws://localhost:9946");
+	const rcApi = await getApi("wss://westend-rpc-tn.dwellir.com");
+	const ahApi = await getApi("wss://asset-hub-westend-rpc.dwellir.com");
 
 	const manager = UpdateManager.getInstance();
+	console.clear();
+	console.log("");
+	manager.erase();
 	// manager.hook();
 
 	let rcOutput: string[] = []
 	let ahOutput: string[] = []
 	const rcEvents: string[] = []
 	const ahEvents: string[] = []
+	const ahWeights: string[] = []
 
 
 	rcApi.rpc.chain.subscribeFinalizedHeads(async (header) => {
@@ -181,68 +201,82 @@ export async function commandCenterHandler(): Promise<void> {
 
 
 		// whether there is a validator set queued in ah-client. for this we need to display only the id and the length of the set.
-		const hasQueuedInClient = await rcApi.query.stakingNextAhClient.validatorSet();
+		const hasQueuedInClient = await rcApi.query.assetHubStakingClient.validatorSet();
 		// whether we have already passed a new validator set to session, and therefore in the next session rotation we want to pass this id to AH.
-		const hasNextActiveId = await rcApi.query.stakingNextAhClient.nextSessionChangesValidators();
-		// whether the AhClient pallet is blocked or not, useful for migration signal from the fellowship.
-		const isBlocked = await rcApi.query.stakingNextAhClient.isBlocked();
+		const hasNextActiveId = await rcApi.query.assetHubStakingClient.nextSessionChangesValidators();
+		// Operating mode of the client.
+		const mode = await rcApi.query.assetHubStakingClient.mode();
 
 		// Events that we are interested in from RC:
 		const eventsOfInterest = (await rcApi.query.system.events())
 			.map((e) => e.event)
 			.filter((e) => {
-				const ahClientEvents = (e: IEventData) => e.section == 'stakingNextAhClient';
+				const ahClientEvents = (e: IEventData) => e.section == 'assetHubStakingClient';
 				const sessionEvents = (e: IEventData) => e.section == 'session' || e.section == 'historical';
 				return ahClientEvents(e.data) || sessionEvents(e.data);
 			})
-			.map((e) => `${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`);
+			.map((e) => `[#${header.number}] ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`);
 		rcEvents.push(...eventsOfInterest);
 		rcOutput = [
-			`RC:`,
+			boldColorize(`RC:`, '36'),
 			`finalized block ${header.number}`,
 			`RC.session: index=${index}, hasQueuedInSession=${hasQueuedInSession}, historicalRange=${historicalRange}`,
-			`RC.stakingNextAhClient: hasQueuedInClient=${hasQueuedInClient}, hasNextActiveId=${hasNextActiveId}, isBlocked=${isBlocked}`,
-			`RC.events: ${rcEvents}`,
+			`RC.assetHubStakingClient: hasQueuedInClient=${hasQueuedInClient}, hasNextActiveId=${hasNextActiveId}, mode=${mode}`,
+			`RC.events:\n${rcEvents.map((e) => `  - ${e}`).join('\n')}`,
 			`----`
 		]
 
 		manager.update(rcOutput.concat(ahOutput))
 	})
 
+	function formatWeight(weight: FrameSupportDispatchPerDispatchClassWeight): string {
+		const refTime = (weight: number): string => (weight / Math.pow(10, 9)).toFixed(2) + ` ms`
+		const proof = (weight: number): string => (weight / 1024).toFixed(2) + ` kB`
+		return `ref-time: ${refTime(weight.mandatory.refTime.toNumber() + weight.operational.refTime.toNumber() + weight.normal.refTime.toNumber())}, proof-size: ${proof(weight.mandatory.proofSize.toNumber() + weight.operational.proofSize.toNumber() + weight.normal.proofSize.toNumber())}`;
+	}
+
 	// AH:
 	ahApi.rpc.chain.subscribeFinalizedHeads(async (header) => {
+		const weight = await ahApi.query.system.blockWeight();
+		ahWeights.push(`[#${header.number}] block weight: ${formatWeight(weight)}`);
 		// the current planned era
-		const currentEra = await ahApi.query.staking.currentEra();
+		const currentEra = (await ahApi.query.staking.currentEra()).unwrap();
 		// the active era
-		const activeEra = await ahApi.query.staking.activeEra();
+		const activeEra = (await ahApi.query.staking.activeEra()).unwrap();
 		// the starting index of the active era
-		const erasStartSessionIndex = await ahApi.query.staking.erasStartSessionIndex(activeEra.unwrap().index)
+		const bondedEras = await ahApi.query.staking.bondedEras();
+		const activeEraStartSessionIndex = bondedEras.find(([e, i]) => e.eq(activeEra.index))?.[1];
 
 		// the basic state of the election provider
 		const phase = await ahApi.query.multiBlock.currentPhase();
 		const round = await ahApi.query.multiBlock.round();
 		const snapshotRange = (await ahApi.query.multiBlock.pagedVoterSnapshotHash.entries()).map(([k, v]) => k.args[0]).sort();
-		const queuedScore = await ahApi.query.multiBlockVerifier.queuedSolutionScore();
+		const queuedScore = await ahApi.query.multiBlockVerifier.queuedSolutionScore(round);
 		const signedSubmissions = await ahApi.query.multiBlockSigned.sortedScores(round);
+
+		// The client
+		const lastSessionReportEndIndex = await ahApi.query.stakingNextRcClient.lastSessionReportEndingIndex()
 
 		// Events that we are interested in from RC:
 		const eventsOfInterest = (await ahApi.query.system.events())
 			.map((e) => e.event)
 			.filter((e) => {
 				const election = (e: IEventData) => e.section == 'multiBlock' || e.section == 'multiBlockVerifier' || e.section == 'multiBlockSigned' || e.section == 'multiBlockUnsigned';
-				const rcClient = (e: IEventData) => e.section == 'stakingNextRcClient';
+				const rcClient = (e: IEventData) => e.section == 'stakingNextRcClient' || e.section == 'StakingNextRcClient';
 				const staking = (e: IEventData) => e.section == 'staking' && (e.method == 'EraPaid' || e.method == 'SessionRotated' || e.method == 'PagedElectionProceeded');
 				return election(e.data) || rcClient(e.data) || staking(e.data);
 			})
-			.map((e) => `${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`);
+			.map((e) => `[#${header.number}] ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`);
 		ahEvents.push(...eventsOfInterest);
 
 		ahOutput = [
-			`AH:`,
+			boldColorize(`AH:`, '35'),
 			`finalized block ${header.number}`,
-			`AH.staking: currentEra=${currentEra}, activeEra=${activeEra}, erasStartSessionIndex(${activeEra.unwrap().index})=${erasStartSessionIndex}`,
+			`AH.staking: currentEra=${currentEra}, activeEra=${activeEra}, activeEraStartSessionIndex=${activeEraStartSessionIndex}, bondedEras=${bondedEras}`,
+			`AH.RcClient: lastSessionReportEndIndex=${lastSessionReportEndIndex}`,
 			`multiBlock: phase=${phase}, round=${round}, snapshotRange=${snapshotRange}, queuedScore=${queuedScore}, signedSubmissions=${signedSubmissions}`,
-			`AH.events: ${ahEvents}`,
+			`AH.events:\n${ahEvents.map((e) => `  - ${e.replace('\n', '')}`).join('\n')}`,
+			// `AH.blockWeights:\n${ahWeights.map((e) => `  - ${e.replace('\n', '')}`).join('\n')}`,
 			`----`,
 		]
 
@@ -508,17 +542,17 @@ export async function deeplyNestedCall(args: HandlerArgs): Promise<void> {
 		console.log(`hex call: ${call.toHex()}`);
 
 		await sendAndFinalize(call, signer);
-		depth ++;
+		depth++;
 	}
 }
 
 export async function submitTxFromFile(args: HandlerArgs, fileStart: string): Promise<void> {
 	// real
-	// const nowWahApi = await getApi("wss://asset-hub-westend-rpc.dwellir.com");
+	const nowWahApi = await getApi("wss://asset-hub-westend-rpc.dwellir.com");
 	// local CS for testing
-	const nowWahApi = await getApi("ws://localhost:8000");
+	// const nowWahApi = await getApi("ws://localhost:8000");
 	// read all files that have the name "call_*.txt" from the given dir
-	const dir = "../assets";
+	const dir = "./assets";
 	const fs = require('fs');
 	const path = require('path');
 	const files = fs.readdirSync(dir).filter((file: string) => file.startsWith(fileStart) && file.endsWith(".txt"));
@@ -529,21 +563,28 @@ export async function submitTxFromFile(args: HandlerArgs, fileStart: string): Pr
 		const content = fs.readFileSync(filePath, 'utf8');
 		const call = nowWahApi.createType('Call', content);
 		const tx = nowWahApi.tx[call.section][call.method](...call.args);
+		const proxied = nowWahApi.tx.proxy.proxy("5FRzwC892cofttMft53kuwEuBLjbM5kWwGz3Qcy2So238QMY", null, tx)
 
-		let signer = getAccount(undefined, 1);
-		await sendAndFinalize(tx, signer)
+		const seed = "jewel rough allow innocent music inside eight soccer faint little adjust sustain";
+		let signer = getAccount(seed, 42);
+		const { success, included } = await sendAndFinalize(proxied, signer)
+		if (!success) {
+			console.error(`failed to submit tx from file ${file}`);
+			break;
+		}
 	}
 }
 
 export async function playgroundHandler(args: HandlerArgs): Promise<void> {
 	// await isExposed(args.ws, "5CMHncn3PkANkyXXcjvd7hN1yhuqbkntofr8o9uncqENCiAU")
+
 	// await saveWahV2(args)
 	// await submitTxFromFile(args)
 	// await deeplyNestedCall(args)
 
-	console.log("submitting sudo set storage txns");
-	await submitTxFromFile(args, "call_");
+	// console.log("submitting sudo set storage txns");
+	// await submitTxFromFile(args, "call_");
 
-	console.log("submitting sudo fix hold txns");
-	await submitTxFromFile(args, "fh_call_");
+	// console.log("submitting sudo fix hold txns");
+	// await submitTxFromFile(args, "fh_call_");
 }
