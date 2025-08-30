@@ -20,7 +20,7 @@ import { locale } from 'yargs';
 import { AccountId } from "@polkadot/types/interfaces"
 import { FrameSupportDispatchPerDispatchClassWeight, PalletStakingRewardDestination, SpWeightsWeightV2Weight } from "@polkadot/types/lookup"
 import { Vec, U8, StorageKey, Option } from "@polkadot/types/"
-import { u8aToHex, numberToHex } from "@polkadot/util"
+import { u8aToHex, numberToHex, arrayFilter } from "@polkadot/util"
 import { signFakeWithApi, signFake } from '@acala-network/chopsticks-utils'
 import { IEvent, IEventData, Observable } from '@polkadot/types/types';
 import UpdateManager from 'stdout-update';
@@ -172,10 +172,21 @@ function boldColorize(text: string, colorCode: string): string {
 }
 
 export async function commandCenterHandler(): Promise<void> {
-	// const rcApi = await getApi("ws://localhost:9945");
+	// local
+	// const rcApi = await getApi("ws://localhost:9944");
 	// const ahApi = await getApi("ws://localhost:9946");
-	const rcApi = await getApi("wss://westend-rpc-tn.dwellir.com");
-	const ahApi = await getApi("wss://asset-hub-westend-rpc.dwellir.com");
+
+	// westend
+	// const rcApi = await getApi("wss://westend-rpc-tn.dwellir.com");
+	// const ahApi = await getApi("wss://asset-hub-westend-rpc.dwellir.com");
+
+	// Paseo TOT
+	// const rcApi = await getApi("wss://api2.zondax.ch/pas-tot/node/rpc");
+	// const ahApi = await getApi("wss://api2.zondax.ch/pas-tot/collator/assethub/rpc");
+
+	// Paseo
+	const rcApi = await getApi("wss://paseo.rpc.amforc.com");
+	const ahApi = await getApi("wss://pas-rpc.stakeworld.io/assethub");
 
 	const manager = UpdateManager.getInstance();
 	console.clear();
@@ -201,17 +212,18 @@ export async function commandCenterHandler(): Promise<void> {
 
 
 		// whether there is a validator set queued in ah-client. for this we need to display only the id and the length of the set.
-		const hasQueuedInClient = await rcApi.query.assetHubStakingClient.validatorSet();
+		const hasQueuedInClient = await rcApi.query.stakingAhClient.validatorSet();
 		// whether we have already passed a new validator set to session, and therefore in the next session rotation we want to pass this id to AH.
-		const hasNextActiveId = await rcApi.query.assetHubStakingClient.nextSessionChangesValidators();
+		const hasNextActiveId = await rcApi.query.stakingAhClient.nextSessionChangesValidators();
+		const validatorSetAppliedAt = await rcApi.query.stakingAhClient.validatorSetAppliedAt();
 		// Operating mode of the client.
-		const mode = await rcApi.query.assetHubStakingClient.mode();
+		const mode = await rcApi.query.stakingAhClient.mode();
 
 		// Events that we are interested in from RC:
 		const eventsOfInterest = (await rcApi.query.system.events())
 			.map((e) => e.event)
 			.filter((e) => {
-				const ahClientEvents = (e: IEventData) => e.section == 'assetHubStakingClient';
+				const ahClientEvents = (e: IEventData) => e.section == 'stakingAhClient';
 				const sessionEvents = (e: IEventData) => e.section == 'session' || e.section == 'historical';
 				return ahClientEvents(e.data) || sessionEvents(e.data);
 			})
@@ -221,7 +233,7 @@ export async function commandCenterHandler(): Promise<void> {
 			boldColorize(`RC:`, '36'),
 			`finalized block ${header.number}`,
 			`RC.session: index=${index}, hasQueuedInSession=${hasQueuedInSession}, historicalRange=${historicalRange}`,
-			`RC.assetHubStakingClient: hasQueuedInClient=${hasQueuedInClient}, hasNextActiveId=${hasNextActiveId}, mode=${mode}`,
+			`RC.stakingAhClient: validatorSetAppliedAt=${validatorSetAppliedAt} hasQueuedInClient=${hasQueuedInClient}, hasNextActiveId=${hasNextActiveId}, mode=${mode}`,
 			`RC.events:\n${rcEvents.map((e) => `  - ${e}`).join('\n')}`,
 			`----`
 		]
@@ -248,21 +260,21 @@ export async function commandCenterHandler(): Promise<void> {
 		const activeEraStartSessionIndex = bondedEras.find(([e, i]) => e.eq(activeEra.index))?.[1];
 
 		// the basic state of the election provider
-		const phase = await ahApi.query.multiBlock.currentPhase();
-		const round = await ahApi.query.multiBlock.round();
-		const snapshotRange = (await ahApi.query.multiBlock.pagedVoterSnapshotHash.entries()).map(([k, v]) => k.args[0]).sort();
-		const queuedScore = await ahApi.query.multiBlockVerifier.queuedSolutionScore(round);
-		const signedSubmissions = await ahApi.query.multiBlockSigned.sortedScores(round);
+		const phase = await ahApi.query.multiBlockElection.currentPhase();
+		const round = await ahApi.query.multiBlockElection.round();
+		const snapshotRange = (await ahApi.query.multiBlockElection.pagedVoterSnapshotHash.entries()).map(([k, v]) => k.args[0]).sort();
+		const queuedScore = await ahApi.query.multiBlockElectionVerifier.queuedSolutionScore(round);
+		const signedSubmissions = await ahApi.query.multiBlockElectionSigned.sortedScores(round);
 
 		// The client
-		const lastSessionReportEndIndex = await ahApi.query.stakingNextRcClient.lastSessionReportEndingIndex()
+		const lastSessionReportEndIndex = await ahApi.query.stakingRcClient.lastSessionReportEndingIndex()
 
 		// Events that we are interested in from RC:
 		const eventsOfInterest = (await ahApi.query.system.events())
 			.map((e) => e.event)
 			.filter((e) => {
-				const election = (e: IEventData) => e.section == 'multiBlock' || e.section == 'multiBlockVerifier' || e.section == 'multiBlockSigned' || e.section == 'multiBlockUnsigned';
-				const rcClient = (e: IEventData) => e.section == 'stakingNextRcClient' || e.section == 'StakingNextRcClient';
+				const election = (e: IEventData) => e.section == 'multiBlockElection' || e.section == 'multiBlockElectionVerifier' || e.section == 'multiBlockElectionSigned' || e.section == 'multiBlockElectionUnsigned';
+				const rcClient = (e: IEventData) => e.section == 'stakingRcClient' || e.section == 'stakingRcClient';
 				const staking = (e: IEventData) => e.section == 'staking' && (e.method == 'EraPaid' || e.method == 'SessionRotated' || e.method == 'PagedElectionProceeded');
 				return election(e.data) || rcClient(e.data) || staking(e.data);
 			})
@@ -274,7 +286,7 @@ export async function commandCenterHandler(): Promise<void> {
 			`finalized block ${header.number}`,
 			`AH.staking: currentEra=${currentEra}, activeEra=${activeEra}, activeEraStartSessionIndex=${activeEraStartSessionIndex}, bondedEras=${bondedEras}`,
 			`AH.RcClient: lastSessionReportEndIndex=${lastSessionReportEndIndex}`,
-			`multiBlock: phase=${phase}, round=${round}, snapshotRange=${snapshotRange}, queuedScore=${queuedScore}, signedSubmissions=${signedSubmissions}`,
+			`multiBlockElection: phase=${phase}, round=${round}, snapshotRange=${snapshotRange}, queuedScore=${queuedScore}, signedSubmissions=${signedSubmissions}`,
 			`AH.events:\n${ahEvents.map((e) => `  - ${e.replace('\n', '')}`).join('\n')}`,
 			// `AH.blockWeights:\n${ahWeights.map((e) => `  - ${e.replace('\n', '')}`).join('\n')}`,
 			`----`,
@@ -388,7 +400,17 @@ export async function ExposureStats({ ws }: HandlerArgs): Promise<void> {
 		const metadata = value.unwrap();
 		return { stash, metadata }
 	});
+
 	console.log(`overviews/exposed validators: ${overviews.length}`);
+	const exposedNominators = (await api.query.staking.erasStakersPaged.entries(era)).map(([key, value]) => {
+		// @ts-ignore
+		return value.unwrap().others.map((x) => x.who.toString());
+	}).flat();
+	const uniq = [...new Set(exposedNominators)];
+	console.log(`exposures: ${exposedNominators.length}`);
+
+	// this is the most important value we want to show.
+	console.log(`unique exposures: ${uniq.length}`);
 	const sumNominators = overviews.map(({ metadata }) => metadata.nominatorCount.toNumber()).reduce((a, b) => a + b, 0);
 	console.log(`sumNominators: ${sumNominators}`);
 }
@@ -575,8 +597,31 @@ export async function submitTxFromFile(args: HandlerArgs, fileStart: string): Pr
 	}
 }
 
+export async function validatorSelfStakes(args: HandlerArgs): Promise<void> {
+	const api = await getApi(args.ws);
+	const allValidators = await Promise.all((await api.query.staking.validators.keys()).map((k) => k.args[0]).map(async (v) => {
+		const ctrl = (await api.query.staking.bonded(v)).unwrap();
+		const ledger = (await api.query.staking.ledger(ctrl)).unwrap();
+		return {stash: v, ctrl: ctrl, total: ledger.total.toBigInt(), active: ledger.active.toBigInt()}
+	}));
+	const currentActive = (await api.query.session.validators());
+
+	const ed = api.consts.balances.existentialDeposit.toBigInt();
+	const activeLessThanEd = allValidators.filter((v) => v.active < ed);
+	const activeLessThanEdValidating = allValidators.filter((v) => v.active < ed && currentActive.includes(v.stash));
+	const totalLessThanEd = allValidators.filter((v) => v.total < ed);
+	const totalLessThanEdValidating = allValidators.filter((v) => v.total < ed && currentActive.includes(v.stash));
+	console.log(`active less than ED: ${activeLessThanEd.length}, ${activeLessThanEdValidating.length} of whom are validating`);
+	console.log(`total less than ED: ${totalLessThanEd.length}, ${totalLessThanEdValidating.length} of whom are validating`);
+	console.log(`all validators: ${allValidators.length}`);
+}
+
 export async function playgroundHandler(args: HandlerArgs): Promise<void> {
+
+	// await validatorSelfStakes(args);
+	// await ExposureStats(args);
 	// await isExposed(args.ws, "5CMHncn3PkANkyXXcjvd7hN1yhuqbkntofr8o9uncqENCiAU")
+
 
 	// await saveWahV2(args)
 	// await submitTxFromFile(args)

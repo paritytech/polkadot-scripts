@@ -26,6 +26,7 @@ export async function correctWeightOf(
 	return (await api.query.staking.ledger(currentCtrl)).unwrapOrDefault().active.toBn();
 }
 
+
 export async function needsRebag(
 	api: ApiPromise,
 	bagThresholds: BN[],
@@ -54,6 +55,26 @@ export async function needsRebag(
 	} else {
 		// correct spot.
 		return false;
+	}
+}
+
+export async function forceRebagAllStakers(
+	api: ApiPromise,
+	signer: KeyringPair,
+	sendTx: boolean,
+): Promise<void> {
+	const bagThresholds = api.consts.voterList.bagThresholds.map((x) => api.createType('Balance', x));
+	const stashes = (await api.query.staking.ledger.entries()).map(([key, value]) => {
+		return value.unwrap().stash;
+	});
+
+	for (let stash of stashes) {
+		const maybeNode = await api.query.voterList.listNodes(stash);
+
+		const shouldRebag = maybeNode.isSome ? await needsRebag(api, bagThresholds, maybeNode.unwrap()) : true;
+		if (shouldRebag) {
+			doRebagSingle(api, signer, stash.toString(), sendTx);
+		}
 	}
 }
 
@@ -145,8 +166,7 @@ export async function doRebagAll(
 		counter += nodes.length;
 
 		console.log(
-			`👜 Bag ${upper.toHuman()} - ${nodes.length} nodes: [${head} .. -> ${
-				head !== tail ? tail : ''
+			`👜 Bag ${upper.toHuman()} - ${nodes.length} nodes: [${head} .. -> ${head !== tail ? tail : ''
 			}]`
 		);
 	}
