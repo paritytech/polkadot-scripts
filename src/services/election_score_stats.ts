@@ -2,32 +2,50 @@
 import { ApiPromise } from '@polkadot/api';
 import BN from 'bn.js';
 import axios from 'axios';
+import { exit } from 'process';
+
+async function sleep(ms: number) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export async function electionScoreStats(chain: string, api: ApiPromise, apiKey: string) {
 	const count = 30;
-	const percent = new BN(50);
+	const percent = new BN(70);
 
 	const data = await axios.post(
-		`https://${chain}.api.subscan.io/api/scan/extrinsics`,
+		`https://${chain}.api.subscan.io/api/v2/scan/events`,
 		{
 			row: count,
 			page: 0,
 			module: 'electionprovidermultiphase',
-			call: 'submit_unsigned',
-			signed: 'all',
-			no_params: false,
-			address: ''
+			event_id: 'electionfinalized',
 		},
 		{ headers: { 'X-API-Key': apiKey } }
 	);
 
 	// @ts-ignore
-	const exts = data.data.data.extrinsics.slice(0, count);
+	const events = data.data.data.events
+
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const scores = exts.map((e: any) => {
-		const parsed = JSON.parse(e.params);
-		return parsed[0].value.score;
+	const eventIds = events.map((e: any) => {
+		return e.event_index
 	});
+
+	const scores = [];
+	for (let i = 0; i < eventIds.length; i++) {
+		const eventId = eventIds[i];
+		const data = await axios.post(
+			`https://${chain}.api.subscan.io/api/scan/event`,
+			{
+				event_index: eventId,
+			},
+			{ headers: { 'X-API-Key': apiKey } }
+		);
+		const score = data.data.data.params[1].value
+		console.log(score);
+		scores.push([score.minimal_stake, score.sum_stake, score.sun_stake_squared]);
+		await sleep(200);
+	}
 
 	const avg = [new BN(0), new BN(0), new BN(0)];
 	for (const score of scores) {
@@ -54,11 +72,12 @@ export async function electionScoreStats(chain: string, api: ApiPromise, apiKey:
 	console.log(`${avg[1].toString()}, ${api.createType('Balance', avg[1]).toHuman()}`);
 	console.log(`${avg[2].toString()}, ${api.createType('Balance', avg[2]).toHuman()}`);
 
+	const current = (await api.query.electionProviderMultiPhase.minimumUntrustedScore()).unwrapOrDefault()
 	console.log(
-		`current minimum untrusted score is ${(
-			await api.query.electionProviderMultiPhase.minimumUntrustedScore()
-		)
-			.unwrapOrDefault()
-			.toHuman()}`
+		`--- current minimum untrusted score:
+${current.minimalStake.toString()}, ${api.createType('Balance', current.minimalStake).toHuman()}
+${current.sumStake.toString()}, ${api.createType('Balance', current.sumStake).toHuman()}
+${current.sumStakeSquared.toString()}, ${api.createType('Balance', current.sumStakeSquared).toHuman()}
+		`
 	);
 }
