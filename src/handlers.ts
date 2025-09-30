@@ -17,7 +17,7 @@ import BN from 'bn.js';
 import { ApiDecoration, SubmittableExtrinsic } from '@polkadot/api/types';
 import { ApiPromise } from '@polkadot/api';
 import { locale } from 'yargs';
-import { AccountId } from "@polkadot/types/interfaces"
+import { AccountId, BlockNumber } from "@polkadot/types/interfaces"
 import { FrameSupportDispatchPerDispatchClassWeight, PalletStakingRewardDestination, SpWeightsWeightV2Weight } from "@polkadot/types/lookup"
 import { Vec, U8, StorageKey, Option } from "@polkadot/types/"
 import { u8aToHex, numberToHex } from "@polkadot/util"
@@ -174,8 +174,10 @@ function boldColorize(text: string, colorCode: string): string {
 export async function commandCenterHandler(): Promise<void> {
 	// const rcApi = await getApi("ws://localhost:9945");
 	// const ahApi = await getApi("ws://localhost:9946");
-	const rcApi = await getApi("wss://westend-rpc-tn.dwellir.com");
-	const ahApi = await getApi("wss://asset-hub-westend-rpc.dwellir.com");
+	const rcApi = await getApi("ws://localhost:63168");
+	const ahApi = await getApi("ws://localhost:63170");
+	// const rcApi = await getApi("wss://westend-rpc-tn.dwellir.com");
+	// const ahApi = await getApi("wss://asset-hub-westend-rpc.dwellir.com");
 
 	const manager = UpdateManager.getInstance();
 	console.clear();
@@ -187,7 +189,6 @@ export async function commandCenterHandler(): Promise<void> {
 	let ahOutput: string[] = []
 	const rcEvents: string[] = []
 	const ahEvents: string[] = []
-	const ahWeights: string[] = []
 
 
 	rcApi.rpc.chain.subscribeFinalizedHeads(async (header) => {
@@ -201,17 +202,19 @@ export async function commandCenterHandler(): Promise<void> {
 
 
 		// whether there is a validator set queued in ah-client. for this we need to display only the id and the length of the set.
-		const hasQueuedInClient = await rcApi.query.assetHubStakingClient.validatorSet();
+		const hasQueuedInClient = await rcApi.query.stakingAhClient.validatorSet();
 		// whether we have already passed a new validator set to session, and therefore in the next session rotation we want to pass this id to AH.
-		const hasNextActiveId = await rcApi.query.assetHubStakingClient.nextSessionChangesValidators();
+		const hasNextActiveId = await rcApi.query.stakingAhClient.nextSessionChangesValidators();
 		// Operating mode of the client.
-		const mode = await rcApi.query.assetHubStakingClient.mode();
+		const mode = await rcApi.query.stakingAhClient.mode();
+		// pending validator points
+		const validatorPoints = (await rcApi.query.stakingAhClient.validatorPoints.keys()).length
 
 		// Events that we are interested in from RC:
 		const eventsOfInterest = (await rcApi.query.system.events())
 			.map((e) => e.event)
 			.filter((e) => {
-				const ahClientEvents = (e: IEventData) => e.section == 'assetHubStakingClient';
+				const ahClientEvents = (e: IEventData) => e.section == 'stakingAhClient';
 				const sessionEvents = (e: IEventData) => e.section == 'session' || e.section == 'historical';
 				return ahClientEvents(e.data) || sessionEvents(e.data);
 			})
@@ -221,7 +224,7 @@ export async function commandCenterHandler(): Promise<void> {
 			boldColorize(`RC:`, '36'),
 			`finalized block ${header.number}`,
 			`RC.session: index=${index}, hasQueuedInSession=${hasQueuedInSession}, historicalRange=${historicalRange}`,
-			`RC.assetHubStakingClient: hasQueuedInClient=${hasQueuedInClient}, hasNextActiveId=${hasNextActiveId}, mode=${mode}`,
+			`RC.stakingAhClient: hasQueuedInClient=${hasQueuedInClient}, hasNextActiveId=${hasNextActiveId}, mode=${mode}, validatorPoints=${validatorPoints}`,
 			`RC.events:\n${rcEvents.map((e) => `  - ${e}`).join('\n')}`,
 			`----`
 		]
@@ -238,7 +241,6 @@ export async function commandCenterHandler(): Promise<void> {
 	// AH:
 	ahApi.rpc.chain.subscribeFinalizedHeads(async (header) => {
 		const weight = await ahApi.query.system.blockWeight();
-		ahWeights.push(`[#${header.number}] block weight: ${formatWeight(weight)}`);
 		// the current planned era
 		const currentEra = (await ahApi.query.staking.currentEra()).unwrap();
 		// the active era
@@ -246,37 +248,42 @@ export async function commandCenterHandler(): Promise<void> {
 		// the starting index of the active era
 		const bondedEras = await ahApi.query.staking.bondedEras();
 		const activeEraStartSessionIndex = bondedEras.find(([e, i]) => e.eq(activeEra.index))?.[1];
+		// counter for stakers
+		const validatorCandidates = await ahApi.query.staking.counterForValidators();
+		const nominatorCandidates = await ahApi.query.staking.counterForNominators();
+		const maxValidatorsCount = await ahApi.query.staking.maxValidatorsCount();
+		const maxNominatorsCount = await ahApi.query.staking.maxNominatorsCount();
+		const validatorCount = await ahApi.query.staking.validatorCount();
 
 		// the basic state of the election provider
-		const phase = await ahApi.query.multiBlock.currentPhase();
-		const round = await ahApi.query.multiBlock.round();
-		const snapshotRange = (await ahApi.query.multiBlock.pagedVoterSnapshotHash.entries()).map(([k, v]) => k.args[0]).sort();
-		const queuedScore = await ahApi.query.multiBlockVerifier.queuedSolutionScore(round);
-		const signedSubmissions = await ahApi.query.multiBlockSigned.sortedScores(round);
+		const phase = await ahApi.query.multiBlockElection.currentPhase();
+		const round = await ahApi.query.multiBlockElection.round();
+		const snapshotRange = (await ahApi.query.multiBlockElection.pagedVoterSnapshotHash.entries()).map(([k, v]) => k.args[0]).sort();
+		const queuedScore = await ahApi.query.multiBlockElectionVerifier.queuedSolutionScore(round);
+		const signedSubmissions = await ahApi.query.multiBlockElectionSigned.sortedScores(round);
 
 		// The client
-		const lastSessionReportEndIndex = await ahApi.query.stakingNextRcClient.lastSessionReportEndingIndex()
+		const lastSessionReportEndIndex = await ahApi.query.stakingRcClient.lastSessionReportEndingIndex()
 
 		// Events that we are interested in from RC:
 		const eventsOfInterest = (await ahApi.query.system.events())
 			.map((e) => e.event)
 			.filter((e) => {
-				const election = (e: IEventData) => e.section == 'multiBlock' || e.section == 'multiBlockVerifier' || e.section == 'multiBlockSigned' || e.section == 'multiBlockUnsigned';
-				const rcClient = (e: IEventData) => e.section == 'stakingNextRcClient' || e.section == 'StakingNextRcClient';
+				const election = (e: IEventData) => e.section == 'multiBlockElection' || e.section == 'multiBlockElectionVerifier' || e.section == 'multiBlockElectionSigned' || e.section == 'multiBlockElectionUnsigned';
+				const rcClient = (e: IEventData) => e.section == 'stakingRcClient' || e.section == 'stakingRcClient';
 				const staking = (e: IEventData) => e.section == 'staking' && (e.method == 'EraPaid' || e.method == 'SessionRotated' || e.method == 'PagedElectionProceeded');
 				return election(e.data) || rcClient(e.data) || staking(e.data);
 			})
-			.map((e) => `[#${header.number}] ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`);
+			.map((e) => `[#${header.number}][${formatWeight(weight)}] ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`);
 		ahEvents.push(...eventsOfInterest);
 
 		ahOutput = [
 			boldColorize(`AH:`, '35'),
 			`finalized block ${header.number}`,
-			`AH.staking: currentEra=${currentEra}, activeEra=${activeEra}, activeEraStartSessionIndex=${activeEraStartSessionIndex}, bondedEras=${bondedEras}`,
+			`AH.staking: currentEra=${currentEra}, activeEra=${activeEra}, activeEraStartSessionIndex=${activeEraStartSessionIndex}, bondedEras=[${bondedEras[0]}..${bondedEras[bondedEras.length - 1]}], validatorCandidates=${validatorCandidates} (max=${maxValidatorsCount}), nominatorCandidates=${nominatorCandidates} (max=${maxNominatorsCount}), validatorCount=${validatorCount}`,
 			`AH.RcClient: lastSessionReportEndIndex=${lastSessionReportEndIndex}`,
-			`multiBlock: phase=${phase}, round=${round}, snapshotRange=${snapshotRange}, queuedScore=${queuedScore}, signedSubmissions=${signedSubmissions}`,
+			`multiBlockElection: phase=${phase}, round=${round}, snapshotRange=${snapshotRange}, queuedScore=${queuedScore}, signedSubmissions=${signedSubmissions}`,
 			`AH.events:\n${ahEvents.map((e) => `  - ${e.replace('\n', '')}`).join('\n')}`,
-			// `AH.blockWeights:\n${ahWeights.map((e) => `  - ${e.replace('\n', '')}`).join('\n')}`,
 			`----`,
 		]
 
@@ -546,7 +553,7 @@ export async function deeplyNestedCall(args: HandlerArgs): Promise<void> {
 		} catch (e) {
 			console.log(`failed to send call with depth: ${depth}: ${e}`);
 		}
-		depth ++;
+		depth++;
 	}
 }
 
@@ -579,7 +586,84 @@ export async function submitTxFromFile(args: HandlerArgs, fileStart: string): Pr
 	}
 }
 
+export async function RcTICheck(): Promise<void> {
+	const rcApi = await getApi("wss://paseo-rpc.n.dwellir.com");
+	const ahApi = await getApi("wss://asset-hub-paseo-rpc.n.dwellir.com");
+
+	let rcSent = new BN(0);
+	let ahReceived = new BN(0);
+	{
+		const start = await rcApi.query.rcMigrator.migrationStartBlock() as Option<BlockNumber>;
+		const startHash = await rcApi.rpc.chain.getBlockHash(start.unwrap());
+		const end = await rcApi.query.rcMigrator.migrationEndBlock() as Option<BlockNumber>;
+		const endHash = await rcApi.rpc.chain.getBlockHash(end.unwrap());
+		const startStage = await rcApi.query.rcMigrator.rcMigrationStage.at(startHash);
+		const endStage = await rcApi.query.rcMigrator.rcMigrationStage.at(endHash);
+
+		const preTI = await rcApi.query.balances.totalIssuance.at(startHash);
+		const postTI = await rcApi.query.balances.totalIssuance.at(endHash);
+
+		console.log(`RC: migrationStartBlock stage: ${startStage}, migrationEndBlock stage: ${endStage}`);
+		console.log(`RC: migrationStartBlock: ${start}, migrationEndBlock: ${end}), duration in blocks: ${end.unwrap().toNumber() - start.unwrap().toNumber()}`);
+		console.log(`RC: totalIssuance at start: ${preTI}`);
+		console.log(`RC: totalIssuance at end: ${postTI}`);
+		console.log(`RC: migrated TI: ${(preTI.sub(postTI))}`);
+
+		rcSent = new BN(preTI).sub(new BN(postTI));
+	}
+
+	{
+		const start = await ahApi.query.ahMigrator.migrationStartBlock() as Option<BlockNumber>;
+		const startHash = await ahApi.rpc.chain.getBlockHash(start.unwrap());
+		const end = await ahApi.query.ahMigrator.migrationEndBlock() as Option<BlockNumber>;
+		const endHash = await ahApi.rpc.chain.getBlockHash(end.unwrap());
+
+		const preTI = await ahApi.query.balances.totalIssuance.at(startHash);
+		const postTI = await ahApi.query.balances.totalIssuance.at(endHash);
+
+		const startStage = await ahApi.query.ahMigrator.ahMigrationStage.at(startHash);
+		const endStage = await ahApi.query.ahMigrator.ahMigrationStage.at(endHash);
+
+		console.log(`AH: migrationStartBlock stage: ${startStage}, migrationEndBlock stage: ${endStage}`);
+		console.log(`AH: migrationStartBlock: ${start}, migrationEndBlock: ${end}), duration in blocks: ${end.unwrap().toNumber() - start.unwrap().toNumber()}`);
+		console.log(`AH: totalIssuance at end: ${postTI}`);
+		console.log(`AH: totalIssuance at start: ${preTI}`);
+		console.log(`AH: Received TI: ${(postTI.sub(preTI))}`);
+		ahReceived = new BN(postTI).sub(new BN(preTI));
+	}
+
+	console.log(`RC sent: ${rcSent}, AH received: ${ahReceived}, difference: ${rcSent.sub(ahReceived)}`);
+}
+
+export async function findSessionReportEvent(api: ApiPromise): Promise<void> {
+	let migrationEnd = (await api.query.ahMigrator.migrationEndBlock() as Option<BlockNumber>).unwrap();
+
+	let block_hash = await api.rpc.chain.getFinalizedHead();
+	while (true) {
+		const block = await api.rpc.chain.getBlock(block_hash);
+		const events = await api.query.system.events.at(block_hash);
+		const sessionReportEvents = events.filter(({ event }) =>
+			event.section == 'stakingRcClient' && event.method == 'SessionReportReceived'
+		);
+		if (sessionReportEvents.length > 0) {
+			console.log(`found SessionReportReceived event at block ${block_hash} (${block.block.header.number})`);
+			sessionReportEvents.forEach(({ event }) => {
+				console.log(`  - ${event.method}(${event.data.toString()})`);
+			});
+		}
+
+		// migration end block, minus a threshold
+		if (block.block.header.number.toNumber() < migrationEnd.toNumber()) {
+			break;
+		}
+
+		block_hash = block.block.header.parentHash;
+	}
+}
+
 export async function playgroundHandler(args: HandlerArgs): Promise<void> {
+	await findSessionReportEvent(await getApi("ws://localhost:63170"));
+	// await RcTICheck();
 	// await isExposed(args.ws, "5CMHncn3PkANkyXXcjvd7hN1yhuqbkntofr8o9uncqENCiAU")
 
 	// await saveWahV2(args)
