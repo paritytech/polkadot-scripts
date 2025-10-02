@@ -34,8 +34,11 @@
 	"dependencies": {
 		"@acala-network/chopsticks-utils": "^1.0.3",
 		"@polkadot/api": "15.7.2",
+		"@types/luxon": "^3.7.1",
 		"axios": "^1.8.2",
 		"bn.js": "^5.2.1",
+		"luxon": "^3.7.2",
+		"papi": "^1.1.2",
 		"stdout-update": "^4.0.1",
 		"strip-ansi": "^7.1.0",
 		"yargs": "^17.7.2"

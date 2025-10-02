@@ -17,14 +17,14 @@ import BN from 'bn.js';
 import { ApiDecoration, SubmittableExtrinsic } from '@polkadot/api/types';
 import { ApiPromise } from '@polkadot/api';
 import { locale } from 'yargs';
-import { AccountId, BlockNumber } from "@polkadot/types/interfaces"
+import { AccountId, Block, BlockNumber } from "@polkadot/types/interfaces"
 import { FrameSupportDispatchPerDispatchClassWeight, PalletStakingRewardDestination, SpWeightsWeightV2Weight } from "@polkadot/types/lookup"
 import { Vec, U8, StorageKey, Option } from "@polkadot/types/"
-import { u8aToHex, numberToHex } from "@polkadot/util"
+import { u8aToHex, numberToHex, arrayChunk } from "@polkadot/util"
 import { signFakeWithApi, signFake } from '@acala-network/chopsticks-utils'
 import { IEvent, IEventData, Observable } from '@polkadot/types/types';
 import UpdateManager from 'stdout-update';
-import { format } from 'path';
+import { Duration } from "luxon"
 
 
 /// TODO: split this per command, it is causing annoyance.
@@ -172,12 +172,14 @@ function boldColorize(text: string, colorCode: string): string {
 }
 
 export async function commandCenterHandler(): Promise<void> {
-	// const rcApi = await getApi("ws://localhost:9945");
-	// const ahApi = await getApi("ws://localhost:9946");
-	const rcApi = await getApi("ws://localhost:63168");
-	const ahApi = await getApi("ws://localhost:63170");
+	const rcApi = await getApi("ws://localhost:9945");
+	const ahApi = await getApi("ws://localhost:9946");
+	// const rcApi = await getApi("ws://localhost:63168");
+	// const ahApi = await getApi("ws://localhost:63170");
 	// const rcApi = await getApi("wss://westend-rpc-tn.dwellir.com");
 	// const ahApi = await getApi("wss://asset-hub-westend-rpc.dwellir.com");
+	// const rcApi = await getApi("wss://paseo-rpc.n.dwellir.com");
+	// const ahApi = await getApi("wss://sys.turboflakes.io/asset-hub-paseo");
 
 	const manager = UpdateManager.getInstance();
 	console.clear();
@@ -202,7 +204,13 @@ export async function commandCenterHandler(): Promise<void> {
 
 
 		// whether there is a validator set queued in ah-client. for this we need to display only the id and the length of the set.
-		const hasQueuedInClient = await rcApi.query.stakingAhClient.validatorSet();
+		// @ts-ignore
+		const hasQueuedInClientTemp = await rcApi.query.stakingAhClient.validatorSet() as Option<[u32, Vec<AccountId>]>;
+		let hasQueuedInClient = 'none'
+		if (hasQueuedInClientTemp.isSome) {
+			let [id, validators] = hasQueuedInClientTemp.unwrap();
+			hasQueuedInClient = `id=${id}, len=${validators.length}`
+		}
 		// whether we have already passed a new validator set to session, and therefore in the next session rotation we want to pass this id to AH.
 		const hasNextActiveId = await rcApi.query.stakingAhClient.nextSessionChangesValidators();
 		// Operating mode of the client.
@@ -245,9 +253,10 @@ export async function commandCenterHandler(): Promise<void> {
 		const currentEra = (await ahApi.query.staking.currentEra()).unwrap();
 		// the active era
 		const activeEra = (await ahApi.query.staking.activeEra()).unwrap();
+		const activeEraDuration = Duration.fromMillis(new Date().getTime() - (activeEra.start.unwrap().toNumber())).toFormat("hh:mm:ss");
 		// the starting index of the active era
 		const bondedEras = await ahApi.query.staking.bondedEras();
-		const activeEraStartSessionIndex = bondedEras.find(([e, i]) => e.eq(activeEra.index))?.[1];
+		const activeEraStartSessionIndex = bondedEras.find(([e, i]) => e.eq(activeEra.index))?.[1].toNumber() || 0;
 		// counter for stakers
 		const validatorCandidates = await ahApi.query.staking.counterForValidators();
 		const nominatorCandidates = await ahApi.query.staking.counterForNominators();
@@ -255,15 +264,25 @@ export async function commandCenterHandler(): Promise<void> {
 		const maxNominatorsCount = await ahApi.query.staking.maxNominatorsCount();
 		const validatorCount = await ahApi.query.staking.validatorCount();
 
+		// Eras that have not been pruned yet
+		const unprunedEras = (await ahApi.query.staking.eraPruningState.entries()).map(([k, v]) => k.args[0]).sort();
+
+		// stake limits for stakers
+		const minNominatorBond = await ahApi.query.staking.minNominatorBond();
+		const minValidatorBond = await ahApi.query.staking.minNominatorBond();
+		const minNominatorActiveStake = await ahApi.query.staking.minimumActiveStake();
+
+		const forcing = await await ahApi.query.staking.forceEra();
+
 		// the basic state of the election provider
 		const phase = await ahApi.query.multiBlockElection.currentPhase();
 		const round = await ahApi.query.multiBlockElection.round();
-		const snapshotRange = (await ahApi.query.multiBlockElection.pagedVoterSnapshotHash.entries()).map(([k, v]) => k.args[0]).sort();
+		const snapshotRange = (await ahApi.query.multiBlockElection.pagedVoterSnapshotHash.entries()).map(([k, v]) => k.args[1]).sort();
 		const queuedScore = await ahApi.query.multiBlockElectionVerifier.queuedSolutionScore(round);
 		const signedSubmissions = await ahApi.query.multiBlockElectionSigned.sortedScores(round);
 
 		// The client
-		const lastSessionReportEndIndex = await ahApi.query.stakingRcClient.lastSessionReportEndingIndex()
+		const lastSessionReportEndIndex = await ahApi.query.stakingRcClient.lastSessionReportEndingIndex() as Option<BlockNumber>;
 
 		// Events that we are interested in from RC:
 		const eventsOfInterest = (await ahApi.query.system.events())
@@ -280,8 +299,10 @@ export async function commandCenterHandler(): Promise<void> {
 		ahOutput = [
 			boldColorize(`AH:`, '35'),
 			`finalized block ${header.number}`,
-			`AH.staking: currentEra=${currentEra}, activeEra=${activeEra}, activeEraStartSessionIndex=${activeEraStartSessionIndex}, bondedEras=[${bondedEras[0]}..${bondedEras[bondedEras.length - 1]}], validatorCandidates=${validatorCandidates} (max=${maxValidatorsCount}), nominatorCandidates=${nominatorCandidates} (max=${maxNominatorsCount}), validatorCount=${validatorCount}`,
-			`AH.RcClient: lastSessionReportEndIndex=${lastSessionReportEndIndex}`,
+			bold("AH Staking:"),
+			`\tcurrentEra=${currentEra}, activeEra=${activeEra} (duration=${activeEraDuration}), unprunedEras=${unprunedEras}, activeEraStartSessionIndex=${activeEraStartSessionIndex} (era-depth=${lastSessionReportEndIndex.unwrap().toNumber() + 1 - activeEraStartSessionIndex}), bondedEras=[${bondedEras[0]}..${bondedEras[bondedEras.length - 1]}], forcing=${forcing}`,
+			`\tWantedActiveValidators=${validatorCount}, validatorCandidates=${validatorCandidates} (max=${maxValidatorsCount}), nominatorCandidates=${nominatorCandidates} (max=${maxNominatorsCount})`,
+			`${bold('AH.RcClient')}: lastSessionReportEndIndex=${lastSessionReportEndIndex}`,
 			`multiBlockElection: phase=${phase}, round=${round}, snapshotRange=${snapshotRange}, queuedScore=${queuedScore}, signedSubmissions=${signedSubmissions}`,
 			`AH.events:\n${ahEvents.map((e) => `  - ${e.replace('\n', '')}`).join('\n')}`,
 			`----`,
