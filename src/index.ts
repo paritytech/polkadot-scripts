@@ -14,6 +14,7 @@ import {
 	inFrontHandler,
 	commandCenterHandler
 } from './handlers';
+import { NETWORK_CONFIGS } from './services';
 
 // Export all of the services so this codebase can be used as a library as well.
 export * from './services';
@@ -195,7 +196,32 @@ async function main() {
 			stateTrieMigrationHandler
 		)
 		// @ts-ignore
-		.command(['ahm-command-center'], 'ahm', {}, commandCenterHandler)
+		.command(
+			['ahm-command-center'],
+			'Monitor Polkadot Asset Hub and Relay Chain',
+			// @ts-ignore
+			(yargs) => {
+				return yargs.options({
+					'rc-uri': {
+						description: 'Relay Chain WebSocket URI',
+						type: 'string',
+						demandOption: false
+					},
+					'ah-uri': {
+						description: 'Asset Hub WebSocket URI',
+						type: 'string',
+						demandOption: false
+					},
+					network: {
+						description: 'Network shorthand (westend or paseo)',
+						type: 'string',
+						choices: Object.keys(NETWORK_CONFIGS),
+						demandOption: false
+					}
+				});
+			},
+			commandCenterHandler
+		)
 		// @ts-ignore
 		.command(['playground'], 'random stuff', {}, playgroundHandler)
 		.parse();

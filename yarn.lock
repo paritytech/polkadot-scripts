@@ -1546,6 +1546,13 @@
   resolved "https://registry.npmjs.org/@tsconfig/node16/-/node16-1.0.2.tgz"
   integrity sha512-eZxlbI8GZscaGS7kkc/trHTT5xgrjH3/1n2JDwusC9iahPKWMRvRjJSAN5mCXviuTGQ/lHnhvv8Q1YTpnfz9gA==
 
+"@types/blessed@^0.1.25":
+  version "0.1.25"
+  resolved "https://registry.yarnpkg.com/@types/blessed/-/blessed-0.1.25.tgz#ab415f4c81f1dab8bf1e4fb98146c7f0f4e4e181"
+  integrity sha512-kQsjBgtsbJLmG6CJA+Z6Nujj+tq1fcSE3UIowbDvzQI4wWmoTV7djUDhSo5lDjgwpIN0oRvks0SA5mMdKE5eFg==
+  dependencies:
+    "@types/node" "*"
+
 "@types/bn.js@^5.1.6":
   version "5.1.6"
   resolved "https://registry.npmjs.org/@types/bn.js/-/bn.js-5.1.6.tgz"
@@ -1874,6 +1881,11 @@ bl@^4.0.3:
     buffer "^5.5.0"
     inherits "^2.0.4"
     readable-stream "^3.4.0"
+
+blessed@^0.1.81:
+  version "0.1.81"
+  resolved "https://registry.yarnpkg.com/blessed/-/blessed-0.1.81.tgz#f962d687ec2c369570ae71af843256e6d0ca1129"
+  integrity sha512-LoF5gae+hlmfORcG1M5+5XZi4LBmvlXTzwJWzUlPryN/SJdSflZvROM2TwkT0GMpq7oqT48NRd4GS7BiVBc5OQ==
 
 bn.js@^5.2.1:
   version "5.2.1"
