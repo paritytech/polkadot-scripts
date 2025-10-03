@@ -63,8 +63,8 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 	const rcApi = await ApiPromise.create({ provider: new WsProvider(rcUri) });
 	const ahApi = await ApiPromise.create({ provider: new WsProvider(ahUri) });
 
-	const rcChain = await rcApi.rpc.system.chain();
-	const ahChain = await ahApi.rpc.system.chain();
+	const rcChain = `${await rcApi.rpc.system.chain()} / ${rcUri}`;
+	const ahChain = `${await ahApi.rpc.system.chain()} / ${ahUri}`;
 
 	// Store early console logs before setting up TUI
 	const earlyLogs: string[] = [];
@@ -98,7 +98,9 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 	// Create the blessed screen
 	const screen = blessed.screen({
 		smartCSR: true,
-		title: 'Polkadot Command Center'
+		title: 'Polkadot Command Center',
+		sendFocus: true,
+		useBCE: true
 	});
 
 	// Main container
@@ -108,7 +110,6 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 		left: 0,
 		width: '100%',
 		height: '100%',
-		mouse: true,
 	});
 
 	// RC status box (top left)
@@ -122,6 +123,7 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 		height: '33%',
 		scrollable: true,
 		tags: true,
+		keys: true,
 		style: {
 			border: { fg: 'cyan' }
 		}
@@ -138,6 +140,7 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 		height: '33%',
 		scrollable: true,
 		tags: true,
+		keys: true,
 		style: {
 			border: { fg: 'magenta' }
 		}
@@ -153,9 +156,20 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 		width: '50%',
 		height: '34%',
 		scrollable: true,
-		tags: true,
 		keys: true,
-		vi: true,
+		input: true,
+		alwaysScroll: true,
+		wrap: false,
+		tags: true,
+		scrollbar: {
+			ch: ' ',
+			track: {
+				bg: 'cyan'
+			},
+			style: {
+				inverse: true
+			}
+		},
 		style: {
 			border: { fg: 'cyan' }
 		}
@@ -171,9 +185,20 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 		width: '50%',
 		height: '34%',
 		scrollable: true,
-		tags: true,
 		keys: true,
-		vi: true,
+		input: true,
+		alwaysScroll: true,
+		wrap: false,
+		tags: true,
+		scrollbar: {
+			ch: ' ',
+			track: {
+				bg: 'magenta'
+			},
+			style: {
+				inverse: true
+			}
+		},
 		style: {
 			border: { fg: 'magenta' }
 		}
@@ -189,9 +214,20 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 		width: '100%',
 		height: '30%',
 		scrollable: true,
-		tags: true,
 		keys: true,
-		vi: true,
+		input: true,
+		alwaysScroll: true,
+		wrap: false,
+		tags: true,
+		scrollbar: {
+			ch: ' ',
+			track: {
+				bg: 'yellow'
+			},
+			style: {
+				inverse: true
+			}
+		},
 		style: {
 			border: { fg: 'yellow' }
 		}
@@ -292,10 +328,15 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 		if (rcProgress) parts.push(rcProgress);
 		if (ahProgress) parts.push(ahProgress);
 
+		// Add last scraped block info
+		const rcBlockInfo = rcLowestBlock !== null ? `RC: #${rcLowestBlock}` : 'RC: not started';
+		const ahBlockInfo = ahLowestBlock !== null ? `AH: #${ahLowestBlock}` : 'AH: not started';
+		const blockInfo = `Last scraped - ${rcBlockInfo}, ${ahBlockInfo}`;
+
 		if (parts.length === 0) {
-			statusBar.setContent(' Press q to quit | ↑↓ to scroll | Tab to switch panels | h: load 600 blocks | H: load 14400 blocks ');
+			statusBar.setContent(` ${blockInfo} | Press q to quit | ↑↓←→ to scroll | Tab to switch panels | h: load 600 blocks | H: load 14400 blocks | Hold Shift+mouse: select text `);
 		} else {
-			statusBar.setContent(` ${parts.join(' | ')} | Press q to quit `);
+			statusBar.setContent(` ${parts.join(' | ')} | ${blockInfo} | Press q to quit `);
 		}
 		screen.render();
 	}
@@ -320,15 +361,7 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 			rcProgress = null;
 			ahProgress = null;
 
-			// Add all events
-			if (rcResult.events.length > 0) {
-				addEvents(rcResult.events);
-			}
-			if (ahResult.events.length > 0) {
-				addEvents(ahResult.events);
-			}
-
-			// Ensure final sorting and display update after all historical events are loaded
+			// Events are already added during loading, just ensure final sorting
 			updateEventDisplay();
 
 			updateProgressStatus();
@@ -384,14 +417,23 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 							return ahClientEvents(e.data) || sessionEvents(e.data);
 						});
 
+					// Add events immediately as we find them
+					const newEvents: EventEntry[] = [];
 					relevantEvents.forEach(e => {
-						rcHistoricalEvents.push({
+						const eventEntry: EventEntry = {
 							chain: 'RC',
 							blockNumber,
 							blockHash: rcBlockHash.toString(),
 							event: `[RC #${blockNumber}] ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`
-						});
+						};
+						rcHistoricalEvents.push(eventEntry);
+						newEvents.push(eventEntry);
 					});
+
+					// Update display immediately if we found events
+					if (newEvents.length > 0) {
+						addEvents(newEvents);
+					}
 
 					rcLowestBlock = blockNumber - 1;
 					rcBlockHash = block.block.header.parentHash;
@@ -449,14 +491,23 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 							return election(e.data) || rcClient(e.data) || staking(e.data);
 						});
 
+					// Add events immediately as we find them
+					const newEvents: EventEntry[] = [];
 					relevantEvents.forEach(e => {
-						ahHistoricalEvents.push({
+						const eventEntry: EventEntry = {
 							chain: 'AH',
 							blockNumber,
 							blockHash: ahBlockHash.toString(),
 							event: `[AH #${blockNumber}][${formatWeight(weight)}] ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`
-						});
+						};
+						ahHistoricalEvents.push(eventEntry);
+						newEvents.push(eventEntry);
 					});
+
+					// Update display immediately if we found events
+					if (newEvents.length > 0) {
+						addEvents(newEvents);
+					}
 
 					ahLowestBlock = blockNumber - 1;
 					ahBlockHash = block.block.header.parentHash;
@@ -537,6 +588,19 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 
 	// Update focus styles on focus change
 	screen.on('element focus', updateFocusStyles);
+
+	// Mouse click handlers for each pane
+	rcBox.on('click', () => {
+		rcBox.focus();
+		updateFocusStyles();
+	});
+
+	ahBox.on('click', () => {
+		ahBox.focus();
+		updateFocusStyles();
+	});
+
+	// Removed click handlers since clickable is disabled for better scrolling
 
 	// Subscribe to RC updates
 	rcApi.rpc.chain.subscribeFinalizedHeads(async (header) => {
