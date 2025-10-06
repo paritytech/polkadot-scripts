@@ -25,6 +25,10 @@ export const NETWORK_CONFIGS = {
 		rcUri: 'wss://paseo.dotters.network',
 		ahUri: 'wss://sys.ibp.network/asset-hub-paseo'
 	},
+	kusama: {
+		rcUri: "wss://rpc.ibp.network/kusama",
+		ahUri: "wss://asset-hub-kusama.dotters.network"
+	},
 	local: {
 		rcUri: 'ws://localhost:9944',
 		ahUri: 'ws://localhost:9946'
@@ -709,6 +713,11 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 
 			// The client
 			const lastSessionReportEndIndex = await ahApi.query.stakingRcClient.lastSessionReportEndingIndex() as Option<BlockNumber>;
+			const lastSessionIndex = lastSessionReportEndIndex.isSome ? lastSessionReportEndIndex.unwrap().toNumber() + 1 : 0;
+
+			// bags-list
+			const allNodes = await ahApi.query.voterList.counterForListNodes();
+			const lock = await ahApi.query.voterList.lock();
 
 			// Events
 			const events = await ahApi.query.system.events();
@@ -739,13 +748,18 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 				'{bold}{yellow-fg}Staking:{/}',
 				`  Current Era: ${currentEra}`,
 				`  Active Era: ${activeEra} (duration: ${activeEraDuration})`,
+				`  Active Era Start Session Index: ${activeEraStartSessionIndex}, Era-depth: ${(lastSessionIndex - activeEraStartSessionIndex)} sessions`,
+				`  Bonded Eras: [${[bondedEras[0], bondedEras[bondedEras.length - 1]].map(([e, i]) => `(${e.toString()} @ ${i.toString()})`).join(', ')}]`,
 				`  Unpruned Eras: ${unprunedEras}`,
 				`  Forcing: ${forcing}`,
-				'',
 				'{bold}{yellow-fg}Validators/Nominators:{/}',
 				`  Wanted Validators: ${validatorCount}`,
 				`  Validator Candidates: ${validatorCandidates} (max: ${maxValidatorsCount})`,
 				`  Nominator Candidates: ${nominatorCandidates} (max: ${maxNominatorsCount})`,
+				`  Min Nominator Bond: ${ahApi.createType('Balance', minNominatorBond).toHuman()} / Min Validator Bond: ${ahApi.createType('Balance', minValidatorBond).toHuman()} / Min Nominator Active Stake: ${ahApi.createType('Balance', minNominatorActiveStake).toHuman()}`,
+				'',
+				'{bold}{yellow-fg}RC Client:{/}',
+				`  Last Session Report: End=${lastSessionReportEndIndex}, Start=${lastSessionIndex}`,
 				'',
 				'{bold}{yellow-fg}Election:{/}',
 				`  Phase: ${phase}`,
@@ -754,9 +768,9 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 				`  Queued Score: ${queuedScore.toString()}`,
 				`  Signed Submissions: ${signedSubmissions.toString()}`,
 				'',
-				'{bold}{yellow-fg}RC Client:{/}',
-				`  Last Session Report End Index: ${lastSessionReportEndIndex.toString()}`,
-				'',
+				'{bold}{yellow-fg}Bags List:{/}',
+				`  All Nodes: ${allNodes}`,
+				`  Lock: ${lock.toU8a()}`,
 			];
 
 			ahBox.setContent(ahContent.join('\n'));
