@@ -63,15 +63,35 @@ function formatArgs(args: any[]): string {
 }
 
 export async function runCommandCenter(rcUri: string, ahUri: string): Promise<void> {
-	// Get APIs
-	const rcApi = await ApiPromise.create({ provider: new WsProvider(rcUri) });
-	const ahApi = await ApiPromise.create({ provider: new WsProvider(ahUri) });
+	// Store early console logs before setting up TUI
+	const earlyLogs: string[] = [];
+
+	// Get APIs with error handling
+	let rcApi: ApiPromise;
+	let ahApi: ApiPromise;
+
+	try {
+		rcApi = await ApiPromise.create({ provider: new WsProvider(rcUri) });
+	} catch (err) {
+		const errorMsg = err instanceof Error ? err.message : String(err);
+		const stackTrace = err instanceof Error && err.stack ? err.stack : '';
+		earlyLogs.push(`[ERROR] Failed to connect to RC at ${rcUri}: ${errorMsg}`);
+		if (stackTrace) earlyLogs.push(stackTrace);
+		throw err;
+	}
+
+	try {
+		ahApi = await ApiPromise.create({ provider: new WsProvider(ahUri) });
+	} catch (err) {
+		const errorMsg = err instanceof Error ? err.message : String(err);
+		const stackTrace = err instanceof Error && err.stack ? err.stack : '';
+		earlyLogs.push(`[ERROR] Failed to connect to AH at ${ahUri}: ${errorMsg}`);
+		if (stackTrace) earlyLogs.push(stackTrace);
+		throw err;
+	}
 
 	const rcChain = `${await rcApi.rpc.system.chain()} / ${rcUri}`;
 	const ahChain = `${await ahApi.rpc.system.chain()} / ${ahUri}`;
-
-	// Store early console logs before setting up TUI
-	const earlyLogs: string[] = [];
 	const originalConsole = {
 		log: console.log,
 		error: console.error,
@@ -104,7 +124,8 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 		smartCSR: true,
 		title: 'Polkadot Command Center',
 		sendFocus: true,
-		useBCE: true
+		useBCE: true,
+		mouse: true
 	});
 
 	// Main container
@@ -124,10 +145,21 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 		top: 0,
 		left: 0,
 		width: '50%',
-		height: '33%',
+		height: '43%',
 		scrollable: true,
 		tags: true,
 		keys: true,
+		mouse: true,
+		alwaysScroll: true,
+		scrollbar: {
+			ch: ' ',
+			track: {
+				bg: 'cyan'
+			},
+			style: {
+				inverse: true
+			}
+		},
 		style: {
 			border: { fg: 'cyan' }
 		}
@@ -141,10 +173,21 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 		top: 0,
 		left: '50%',
 		width: '50%',
-		height: '33%',
+		height: '43%',
 		scrollable: true,
 		tags: true,
 		keys: true,
+		mouse: true,
+		alwaysScroll: true,
+		scrollbar: {
+			ch: ' ',
+			track: {
+				bg: 'magenta'
+			},
+			style: {
+				inverse: true
+			}
+		},
 		style: {
 			border: { fg: 'magenta' }
 		}
@@ -155,13 +198,14 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 		parent: container,
 		label: 'RC Events',
 		border: { type: 'line' },
-		top: '33%',
+		top: '43%',
 		left: 0,
 		width: '50%',
 		height: '34%',
 		scrollable: true,
 		keys: true,
 		input: true,
+		mouse: true,
 		alwaysScroll: true,
 		wrap: false,
 		tags: true,
@@ -184,13 +228,14 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 		parent: container,
 		label: 'AH Events',
 		border: { type: 'line' },
-		top: '33%',
+		top: '43%',
 		left: '50%',
 		width: '50%',
 		height: '34%',
 		scrollable: true,
 		keys: true,
 		input: true,
+		mouse: true,
 		alwaysScroll: true,
 		wrap: false,
 		tags: true,
@@ -213,13 +258,14 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 		parent: container,
 		label: 'Console Output',
 		border: { type: 'line' },
-		top: '67%',
+		top: '77%',
 		left: 0,
 		width: '100%',
-		height: '30%',
+		height: '20%',
 		scrollable: true,
 		keys: true,
 		input: true,
+		mouse: true,
 		alwaysScroll: true,
 		wrap: false,
 		tags: true,
@@ -604,7 +650,20 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 		updateFocusStyles();
 	});
 
-	// Removed click handlers since clickable is disabled for better scrolling
+	rcEventsBox.on('click', () => {
+		rcEventsBox.focus();
+		updateFocusStyles();
+	});
+
+	ahEventsBox.on('click', () => {
+		ahEventsBox.focus();
+		updateFocusStyles();
+	});
+
+	consoleBox.on('click', () => {
+		consoleBox.focus();
+		updateFocusStyles();
+	});
 
 	// Subscribe to RC updates
 	rcApi.rpc.chain.subscribeFinalizedHeads(async (header) => {
@@ -650,6 +709,7 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 				addEvents([eventEntry]);
 			});
 
+
 			// Update RC box
 			const rcContent = [
 				`{bold}{cyan-fg}Finalized Block:{/} #${header.number}`,
@@ -657,7 +717,7 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 				'{bold}{yellow-fg}Session Info:{/}',
 				`  Current Index: ${index}`,
 				`  Queued in Session: ${hasQueuedInClient}`,
-				`  Historical Range: ${historicalRange}`,
+				`  Historical Range: ${historicalRange} (${(historicalRange.unwrap()[1] || 0).toNumber() - (historicalRange.unwrap()[0] || 0).toNumber()} sessions)`,
 				'',
 				'{bold}{yellow-fg}Staking AH Client:{/}',
 				`  Queued in Client: ${hasQueuedInClient}`,
@@ -670,7 +730,10 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 			rcBox.setContent(rcContent.join('\n'));
 			screen.render();
 		} catch (err) {
-			rcBox.setContent(`Error: ${err}`);
+			const errorMsg = err instanceof Error ? err.message : String(err);
+			const stackTrace = err instanceof Error && err.stack ? err.stack : '';
+			rcBox.setContent(`Error: ${errorMsg}`);
+			logToConsole(`RC Error: ${errorMsg}${stackTrace ? '\n' + stackTrace : ''}`);
 			screen.render();
 		}
 	});
@@ -680,12 +743,13 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 		try {
 			const weight = await ahApi.query.system.blockWeight();
 			// the current planned era
-			const currentEra = (await ahApi.query.staking.currentEra()).unwrap();
+			const currentEra = (await ahApi.query.staking.currentEra()).unwrapOrDefault();
 			// the active era
-			const activeEra = (await ahApi.query.staking.activeEra()).unwrap();
-			const activeEraDuration = Duration.fromMillis(new Date().getTime() - (activeEra.start.unwrap().toNumber())).toFormat("hh:mm:ss");
+			const activeEra = (await ahApi.query.staking.activeEra()).unwrapOrDefault();
+			const activeEraDuration = Duration.fromMillis(new Date().getTime() - (activeEra.start.unwrapOrDefault().toNumber())).toFormat("hh:mm:ss");
 			// the starting index of the active era
 			const bondedEras = await ahApi.query.staking.bondedEras();
+			const firstAndLastBondedEra = bondedEras.length > 0 ? [bondedEras[0], bondedEras[bondedEras.length - 1]] : [];
 			const activeEraStartSessionIndex = bondedEras.find(([e, i]) => e.eq(activeEra.index))?.[1].toNumber() || 0;
 			// counter for stakers
 			const validatorCandidates = await ahApi.query.staking.counterForValidators();
@@ -713,7 +777,7 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 
 			// The client
 			const lastSessionReportEndIndex = await ahApi.query.stakingRcClient.lastSessionReportEndingIndex() as Option<BlockNumber>;
-			const lastSessionIndex = lastSessionReportEndIndex.isSome ? lastSessionReportEndIndex.unwrap().toNumber() + 1 : 0;
+			const lastSessionIndex = lastSessionReportEndIndex.isSome ? lastSessionReportEndIndex.unwrapOrDefault().toNumber() + 1 : 0;
 
 			// bags-list
 			const allNodes = await ahApi.query.voterList.counterForListNodes();
@@ -749,7 +813,7 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 				`  Current Era: ${currentEra}`,
 				`  Active Era: ${activeEra} (duration: ${activeEraDuration})`,
 				`  Active Era Start Session Index: ${activeEraStartSessionIndex}, Era-depth: ${(lastSessionIndex - activeEraStartSessionIndex)} sessions`,
-				`  Bonded Eras: [${[bondedEras[0], bondedEras[bondedEras.length - 1]].map(([e, i]) => `(${e.toString()} @ ${i.toString()})`).join(', ')}]`,
+				`  Bonded Eras: [${firstAndLastBondedEra.map(([e, i]) => `(${e.toString()} @ ${i.toString()})`).join(', ')}]`,
 				`  Unpruned Eras: ${unprunedEras}`,
 				`  Forcing: ${forcing}`,
 				'{bold}{yellow-fg}Validators/Nominators:{/}',
@@ -776,7 +840,10 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 			ahBox.setContent(ahContent.join('\n'));
 			screen.render();
 		} catch (err) {
-			ahBox.setContent(`Error: ${err}`);
+			const errorMsg = err instanceof Error ? err.message : String(err);
+			const stackTrace = err instanceof Error && err.stack ? err.stack : '';
+			ahBox.setContent(`Error: ${errorMsg}`);
+			logToConsole(`AH Error: ${errorMsg}${stackTrace ? '\n' + stackTrace : ''}`);
 			screen.render();
 		}
 	});
