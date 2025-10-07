@@ -304,6 +304,10 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 	let rcLowestBlock: number | null = null;
 	let ahLowestBlock: number | null = null;
 
+	// Track last update times
+	let rcLastUpdate: number = Date.now();
+	let ahLastUpdate: number = Date.now();
+
 	// Console logs storage
 	const consoleLogs: string[] = [];
 
@@ -668,7 +672,9 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 	// Subscribe to RC updates
 	rcApi.rpc.chain.subscribeFinalizedHeads(async (header) => {
 		try {
+			rcLastUpdate = Date.now();
 			const index = await rcApi.query.session.currentIndex();
+			const hasQueuedInSession = await rcApi.query.session.queuedChanged();
 			// whether there is a validator set queued in ah-client. for this we need to display only the id and the length of the set.
 			// @ts-ignore
 			const hasQueuedInClientTemp = await rcApi.query.stakingAhClient.validatorSet() as Option<[u32, Vec<AccountId>]>;
@@ -681,12 +687,22 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 			const historicalRange = await rcApi.query.historical.storedRange();
 
 			// whether we have already passed a new validator set to session, and therefore in the next session rotation we want to pass this id to AH.
-			// whether we have already passed a new validator set to session, and therefore in the next session rotation we want to pass this id to AH.
 			const hasNextActiveId = await rcApi.query.stakingAhClient.nextSessionChangesValidators();
 			// Operating mode of the client.
 			const mode = await rcApi.query.stakingAhClient.mode();
 			// pending validator points
 			const validatorPoints = (await rcApi.query.stakingAhClient.validatorPoints.keys()).length
+
+			// staking force era in RC
+			const forceEra = await rcApi.query.staking.forceEra();
+			const electionPhase = await rcApi.query.electionProviderMultiPhase.currentPhase();
+
+			// parachain configs
+			const configuration = await rcApi.query.configuration.activeConfig();
+			// @ts-ignore
+			const maxDownwardMessageSize = await configuration.maxDownwardMessageSize;
+			// @ts-ignore
+			const maxUpwardMessageSize = await configuration.maxUpwardMessageSize;
 
 			// Events
 			const events = await rcApi.query.system.events();
@@ -716,7 +732,7 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 				'',
 				'{bold}{yellow-fg}Session Info:{/}',
 				`  Current Index: ${index}`,
-				`  Queued in Session: ${hasQueuedInClient}`,
+				`  Queued in Session: ${hasQueuedInSession}`,
 				`  Historical Range: ${historicalRange} (${(historicalRange.unwrap()[1] || 0).toNumber() - (historicalRange.unwrap()[0] || 0).toNumber()} sessions)`,
 				'',
 				'{bold}{yellow-fg}Staking AH Client:{/}',
@@ -725,6 +741,13 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 				`  Mode: ${mode}`,
 				`  Validator Points: ${validatorPoints}`,
 				'',
+				'{bold}{yellow-fg}Staking/Elections:{/}',
+				`  Force Era: ${forceEra}`,
+				`  Election Phase: ${electionPhase}`,
+				'',
+				'{bold}{yellow-fg}Parachain Config:{/}',
+				`  Max Downward Message Size: ${maxDownwardMessageSize}`,
+				`  Max Upward Message Size: ${maxUpwardMessageSize}`,
 			];
 
 			rcBox.setContent(rcContent.join('\n'));
@@ -741,6 +764,7 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 	// Subscribe to AH updates
 	ahApi.rpc.chain.subscribeFinalizedHeads(async (header) => {
 		try {
+			ahLastUpdate = Date.now();
 			const weight = await ahApi.query.system.blockWeight();
 			// the current planned era
 			const currentEra = (await ahApi.query.staking.currentEra()).unwrapOrDefault();
@@ -861,6 +885,16 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 	setTimeout(() => {
 		logToConsole('Loading initial 600 blocks of historical events...');
 		loadHistoricalEvents(600);
+	}, 100);
+
+	// Update timers every 100ms in the box labels
+	setInterval(() => {
+		const rcElapsed = ((Date.now() - rcLastUpdate) / 1000).toFixed(1);
+		const ahElapsed = ((Date.now() - ahLastUpdate) / 1000).toFixed(1);
+
+		rcBox.setLabel(`Relay: ${rcChain} (${rcElapsed}s)`);
+		ahBox.setLabel(`AH: ${ahChain} (${ahElapsed}s)`);
+		screen.render();
 	}, 100);
 
 	// Prevent the function from returning by creating a promise that never resolves
