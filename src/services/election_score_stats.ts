@@ -43,7 +43,7 @@ export async function electionScoreStats(chain: string, api: ApiPromise, apiKey:
 		);
 		const score = data.data.data.params[1].value
 		console.log(score);
-		scores.push([score.minimal_stake, score.sum_stake, score.sun_stake_squared]);
+		scores.push([score.minimal_stake, score.sum_stake, score.sum_stake_squared]);
 		await sleep(200);
 	}
 
