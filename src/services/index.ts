@@ -213,3 +213,4 @@ export * from './chill_other';
 export * from './reap_stash';
 export * from './state_trie_migration';
 export * from './command_center';
+export * from './block_time_monitor';

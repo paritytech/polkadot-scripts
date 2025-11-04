@@ -12,7 +12,8 @@ import {
 	stateTrieMigrationHandler,
 	stakingStatsHandler,
 	inFrontHandler,
-	commandCenterHandler
+	commandCenterHandler,
+	blockTimeMonitorHandler
 } from './handlers';
 import { NETWORK_CONFIGS } from './services';
 
@@ -238,6 +239,14 @@ async function main() {
 				});
 			},
 			playgroundHandler
+		)
+		// @ts-ignore
+		.command(
+			['block-time'],
+			'Monitor finalized blocks and track time differences',
+			{},
+			// @ts-ignore
+			blockTimeMonitorHandler
 		)
 		.parse();
 }

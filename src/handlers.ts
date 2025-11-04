@@ -9,6 +9,7 @@ import {
 	doRebagSingle,
 	canPutInFrontOf,
 	runCommandCenter,
+	runBlockTimeMonitor,
 	NETWORK_CONFIGS
 } from './services';
 import { binarySearchStorageChange, getAccountFromEnvOrArgElseAlice, getApi, getAtApi, sendAndAwaitInBlock, sendAndFinalize } from './helpers';
@@ -377,4 +378,8 @@ export async function playgroundHandler({ ws, seed, target }: HandlerArgs): Prom
 	}
 
 	console.log(`\n✨ Completed processing all ${membersInPool.length} members`);
+}
+
+export async function blockTimeMonitorHandler({ ws }: HandlerArgs): Promise<void> {
+	await runBlockTimeMonitor(ws);
 }
