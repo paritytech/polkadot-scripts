@@ -29,9 +29,17 @@ export const NETWORK_CONFIGS = {
 		rcUri: "wss://rpc.ibp.network/kusama",
 		ahUri: "wss://asset-hub-kusama.dotters.network"
 	},
+	polkadot: {
+		rcUri: "wss://rpc.ibp.network/polkadot",
+		ahUri: "wss://asset-hub-polkadot.dotters.network"
+	},
 	local: {
 		rcUri: 'ws://localhost:9944',
 		ahUri: 'ws://localhost:9946'
+	},
+	local_zb: {
+		rcUri: 'ws://localhost:63168',
+		ahUri: 'ws://localhost:63170'
 	}
 };
 
@@ -787,7 +795,7 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 
 			// stake limits for stakers
 			const minNominatorBond = await ahApi.query.staking.minNominatorBond();
-			const minValidatorBond = await ahApi.query.staking.minNominatorBond();
+			const minValidatorBond = await ahApi.query.staking.minValidatorBond();
 			const minNominatorActiveStake = await ahApi.query.staking.minimumActiveStake();
 
 			const forcing = await await ahApi.query.staking.forceEra();

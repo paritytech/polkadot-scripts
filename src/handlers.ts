@@ -11,7 +11,7 @@ import {
 	runCommandCenter,
 	NETWORK_CONFIGS
 } from './services';
-import { binarySearchStorageChange, getAccountFromEnvOrArgElseAlice, getApi, getAtApi } from './helpers';
+import { binarySearchStorageChange, getAccountFromEnvOrArgElseAlice, getApi, getAtApi, sendAndAwaitInBlock, sendAndFinalize } from './helpers';
 import { reapStash } from './services/reap_stash';
 import { chillOther } from './services/chill_other';
 import { stateTrieMigration } from './services/state_trie_migration';
@@ -310,7 +310,71 @@ export async function controllerStats({ ws }: HandlerArgs): Promise<void> {
 	console.log(`bonded: same=${same}, different=${different}`)
 }
 
-export async function playgroundHandler(args: HandlerArgs): Promise<void> {
-	// Placeholder for playground functionality
-	console.log('Playground handler called with args:', args);
+export async function playgroundHandler({ ws, seed, target }: HandlerArgs): Promise<void> {
+	if (!target) {
+		throw new Error('Pool ID must be provided via --target/-t parameter');
+	}
+
+	const poolId = parseInt(target);
+	if (isNaN(poolId)) {
+		throw new Error(`Invalid pool ID: ${target}`);
+	}
+
+	console.log(`🏊 Processing pool ${poolId}`);
+
+	const api = await getApi(ws);
+	const account = await getAccountFromEnvOrArgElseAlice(api, seed);
+
+	// Query all pool members for the given pool
+	const poolMembersEntries = await api.query.nominationPools.poolMembers.entries();
+
+	const membersInPool = poolMembersEntries
+		.map(([key, value]) => {
+			const memberAccount = key.args[0].toString();
+			const poolMember = value.unwrap();
+			return {
+				account: memberAccount,
+				poolId: poolMember.poolId.toNumber(),
+				points: poolMember.points.toBn(),
+				unbondingEras: poolMember.unbondingEras
+			};
+		})
+		.filter(member => member.poolId === poolId);
+
+	console.log(`Found ${membersInPool.length} members in pool ${poolId}`);
+
+	if (membersInPool.length === 0) {
+		console.log('No members found in this pool. Exiting.');
+		return;
+	}
+
+	// Create withdraw_unbonded transactions for each member
+	const txs = [];
+	for (const member of membersInPool) {
+		console.log(`Adding withdraw_unbonded for member: ${member.account}`);
+		const tx = api.tx.nominationPools.withdrawUnbonded(member.account, 0);
+		txs.push(tx);
+	}
+
+	console.log(`\nPrepared ${txs.length} withdraw_unbonded transactions`);
+
+	// Execute transactions one by one
+	for (let i = 0; i < txs.length; i++) {
+		const tx = txs[i];
+		const member = membersInPool[i];
+
+		console.log(`\n[${i + 1}/${txs.length}] Processing ${member.account}...`);
+
+		try {
+			const result = await sendAndAwaitInBlock(tx, account);
+			console.log(`✅ Success: ${result.success}`);
+			// if (result.success) {
+			console.log(`   Events: ${result.included.map((e: any) => `${e.event.section}::${e.event.method}`).join(', ')}`);
+			// }
+		} catch (error) {
+			console.error(`❌ Failed for ${member.account}:`, error);
+		}
+	}
+
+	console.log(`\n✨ Completed processing all ${membersInPool.length} members`);
 }

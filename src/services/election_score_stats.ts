@@ -10,15 +10,15 @@ async function sleep(ms: number) {
 
 export async function electionScoreStats(chain: string, api: ApiPromise, apiKey: string) {
 	const count = 30;
-	const percent = new BN(70);
+	const percent = new BN(10);
 
 	const data = await axios.post(
-		`https://${chain}.api.subscan.io/api/v2/scan/events`,
+		`https://assethub-paseo.api.subscan.io/api/v2/scan/events`,
 		{
 			row: count,
 			page: 0,
-			module: 'electionprovidermultiphase',
-			event_id: 'electionfinalized',
+			module: 'multiblockelectionverifier',
+			event_id: 'queued',
 		},
 		{ headers: { 'X-API-Key': apiKey } }
 	);
@@ -35,13 +35,13 @@ export async function electionScoreStats(chain: string, api: ApiPromise, apiKey:
 	for (let i = 0; i < eventIds.length; i++) {
 		const eventId = eventIds[i];
 		const data = await axios.post(
-			`https://${chain}.api.subscan.io/api/scan/event`,
+			`https://assethub-paseo.api.subscan.io/api/scan/event`,
 			{
 				event_index: eventId,
 			},
 			{ headers: { 'X-API-Key': apiKey } }
 		);
-		const score = data.data.data.params[1].value
+		const score = data.data.data.params[0].value
 		console.log(score);
 		scores.push([score.minimal_stake, score.sum_stake, score.sum_stake_squared]);
 		await sleep(200);
@@ -72,7 +72,8 @@ export async function electionScoreStats(chain: string, api: ApiPromise, apiKey:
 	console.log(`${avg[1].toString()}, ${api.createType('Balance', avg[1]).toHuman()}`);
 	console.log(`${avg[2].toString()}, ${api.createType('Balance', avg[2]).toHuman()}`);
 
-	const current = (await api.query.electionProviderMultiPhase.minimumUntrustedScore()).unwrapOrDefault()
+	// @ts-ignore
+	const current = (await api.query.multiblockElection.minimumScore()).unwrapOrDefault()
 	console.log(
 		`--- current minimum untrusted score:
 ${current.minimalStake.toString()}, ${api.createType('Balance', current.minimalStake).toHuman()}

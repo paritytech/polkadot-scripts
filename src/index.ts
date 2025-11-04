@@ -32,7 +32,7 @@ async function main() {
 			ws: {
 				alias: 'w',
 				description: 'the wss endpoint. It must allow unsafe RPCs.',
-				default: 'wss://rpc.polkadot.io',
+				default: 'wss://polkadot.dotters.network',
 				string: true,
 				demandOption: false,
 				global: true
@@ -223,7 +223,22 @@ async function main() {
 			commandCenterHandler
 		)
 		// @ts-ignore
-		.command(['playground'], 'random stuff', {}, playgroundHandler)
+		.command(
+			['playground'],
+			'random stuff',
+			// @ts-ignore
+			(yargs) => {
+				return yargs.options({
+					target: {
+						alias: 't',
+						description: 'Pool ID to process',
+						demandOption: true,
+						type: 'string'
+					}
+				});
+			},
+			playgroundHandler
+		)
 		.parse();
 }
 
