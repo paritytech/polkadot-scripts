@@ -3,6 +3,7 @@ import { ApiPromise } from '@polkadot/api';
 import { WsProvider } from '@polkadot/rpc-provider';
 import { Header } from '@polkadot/types/interfaces';
 import * as blessed from 'blessed';
+import { subscribeFinalizedHeadsWithGapDetection } from '../helpers/subscription';
 
 interface BlockInfo {
 	number: number;
@@ -408,95 +409,66 @@ export async function runBlockTimeMonitor(wsUri: string): Promise<void> {
 	let lastBlockNumber: number | null = null;
 	let lastBlockInfo: BlockInfo | null = null;
 
-	// Subscribe to finalized block headers
-	api.rpc.chain.subscribeFinalizedHeads(async (header: Header) => {
-		try {
-			const blockNumber = header.number.toNumber();
-			const blockHash = header.hash.toHex();
+	// Subscribe to finalized block headers with automatic gap detection and backfilling
+	await subscribeFinalizedHeadsWithGapDetection(
+		api,
+		async (header: Header, blockHash: string, isBackfill: boolean) => {
+			try {
+				const blockNumber = header.number.toNumber();
 
-			// Check for gaps in block numbers
-			if (lastBlockNumber !== null && blockNumber > lastBlockNumber + 1) {
-				// Gap detected! Backfill missing blocks
-				const gap = blockNumber - lastBlockNumber - 1;
-				logToConsole(`Gap detected: ${gap} block(s) between #${lastBlockNumber} and #${blockNumber}. Backfilling...`);
+				// Extract block info
+				const blockInfo = await extractBlockInfo(api, blockHash, blockNumber);
 
-				// Fetch and display missing blocks
-				for (let missingBlockNum = lastBlockNumber + 1; missingBlockNum < blockNumber; missingBlockNum++) {
-					try {
-						const missingBlockHash = await api.rpc.chain.getBlockHash(missingBlockNum);
-						const missingBlockInfo = await extractBlockInfo(api, missingBlockHash.toHex(), missingBlockNum);
+				// Calculate time diff from previous block
+				const timeDiff = lastBlockInfo !== null
+					? (blockInfo.timestamp - lastBlockInfo.timestamp) / 1000
+					: null;
 
-						// Calculate time diff from previous block
-						const timeDiff = lastBlockInfo !== null
-							? (missingBlockInfo.timestamp - lastBlockInfo.timestamp) / 1000
-							: null;
+				const blockEntry = formatBlock(blockInfo, timeDiff, subscanBaseUrl);
+				blockEntries.unshift({ text: blockEntry, blockNumber: blockNumber });
 
-						const blockEntry = formatBlock(missingBlockInfo, timeDiff, subscanBaseUrl);
-						blockEntries.unshift({ text: blockEntry, blockNumber: missingBlockNum });
+				// Limit stored blocks to prevent memory issues
+				if (blockEntries.length > 1000) {
+					blockEntries.pop();
+				}
 
-						// Track slow collators
-						if (timeDiff !== null && timeDiff > 7) {
-							const author = missingBlockInfo.author || 'Unknown';
-							const existing = slowCollatorMap.get(author) || { count: 0, totalTime: 0, blocks: [] };
-							existing.count++;
-							existing.totalTime += timeDiff;
-							existing.blocks.push(missingBlockNum);
-							slowCollatorMap.set(author, existing);
-						}
+				// Track slow collators
+				if (timeDiff !== null && timeDiff > 7) {
+					const author = blockInfo.author || 'Unknown';
+					const existing = slowCollatorMap.get(author) || { count: 0, totalTime: 0, blocks: [] };
+					existing.count++;
+					existing.totalTime += timeDiff;
+					existing.blocks.push(blockNumber);
+					slowCollatorMap.set(author, existing);
 
-						// Update tracking variables
-						lastBlockInfo = missingBlockInfo;
-						lastBlockNumber = missingBlockNum;
-					} catch (err) {
-						logToConsole(`Error backfilling block #${missingBlockNum}: ${err instanceof Error ? err.message : String(err)}`);
+					// Log slow block to console (only for current blocks, not backfilled)
+					if (!isBackfill) {
+						logToConsole(`Slow block detected: #${blockNumber} (${timeDiff.toFixed(2)}s) by ${author}`);
 					}
 				}
 
-				logToConsole(`Backfill complete. Processed ${gap} block(s).`);
+				// Update tracking variables
+				lastBlockInfo = blockInfo;
+				lastBlockNumber = blockNumber;
+
+				// Update display
+				updateDisplay();
+
+			} catch (err) {
+				const errorMsg = err instanceof Error ? err.message : String(err);
+				logToConsole(`Error processing block #${header.number}: ${errorMsg}`);
+				updateDisplay();
 			}
-
-			// Process current block
-			const currentBlockInfo = await extractBlockInfo(api, blockHash, blockNumber);
-
-			// Calculate time diff from previous block
-			const timeDiff = lastBlockInfo !== null
-				? (currentBlockInfo.timestamp - lastBlockInfo.timestamp) / 1000
-				: null;
-
-			const blockEntry = formatBlock(currentBlockInfo, timeDiff, subscanBaseUrl);
-			blockEntries.unshift({ text: blockEntry, blockNumber: blockNumber });
-
-			// Limit stored blocks to prevent memory issues
-			if (blockEntries.length > 1000) {
-				blockEntries.pop();
-			}
-
-			// Track slow collators
-			if (timeDiff !== null && timeDiff > 7) {
-				const author = currentBlockInfo.author || 'Unknown';
-				const existing = slowCollatorMap.get(author) || { count: 0, totalTime: 0, blocks: [] };
-				existing.count++;
-				existing.totalTime += timeDiff;
-				existing.blocks.push(blockNumber);
-				slowCollatorMap.set(author, existing);
-
-				// Log slow block to console
-				logToConsole(`Slow block detected: #${blockNumber} (${timeDiff.toFixed(2)}s) by ${author}`);
-			}
-
-			// Update tracking variables
-			lastBlockInfo = currentBlockInfo;
-			lastBlockNumber = blockNumber;
-
-			// Update display
-			updateDisplay();
-
-		} catch (err) {
-			const errorMsg = err instanceof Error ? err.message : String(err);
-			logToConsole(`Error processing block #${header.number}: ${errorMsg}`);
-			updateDisplay();
+		},
+		// onGapDetected callback
+		(lastBlock, currentBlock, gap) => {
+			logToConsole(`Gap detected: ${gap} block(s) between #${lastBlock} and #${currentBlock}. Backfilling...`);
+		},
+		// onBackfillError callback
+		(blockNumber, error) => {
+			logToConsole(`Error backfilling block #${blockNumber}: ${error.message}`);
 		}
-	});
+	);
 
 	// Initial render
 	updateDisplay();

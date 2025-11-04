@@ -7,6 +7,7 @@ import * as blessed from 'blessed';
 import { Option } from "@polkadot/types";
 import { SpWeightsWeightV2Weight } from "@polkadot/types/lookup";
 import { BlockNumber } from '@polkadot/types/interfaces';
+import { subscribeFinalizedHeadsWithGapDetection } from '../helpers/subscription';
 
 interface EventEntry {
 	chain: 'RC' | 'AH';
@@ -348,10 +349,6 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 	// Track last update times
 	let rcLastUpdate: number = Date.now();
 	let ahLastUpdate: number = Date.now();
-
-	// Track last processed block numbers for gap detection
-	let rcLastBlockNumber: number | null = null;
-	let ahLastBlockNumber: number | null = null;
 
 	// Console logs storage
 	const consoleLogs: string[] = [];
@@ -721,317 +718,250 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 	});
 
 	// Subscribe to RC updates
-	rcApi.rpc.chain.subscribeFinalizedHeads(async (header) => {
-		try {
-			rcLastUpdate = Date.now();
-			const blockNumber = header.number.toNumber();
-
-			// Check for gaps in block numbers
-			if (rcLastBlockNumber !== null && blockNumber > rcLastBlockNumber + 1) {
-				// Gap detected! Backfill missing blocks
-				const gap = blockNumber - rcLastBlockNumber - 1;
-				logToConsole(`RC: Gap detected: ${gap} block(s) between #${rcLastBlockNumber} and #${blockNumber}. Backfilling...`);
-
-				// Fetch and process missing blocks
-				for (let missingBlockNum = rcLastBlockNumber + 1; missingBlockNum < blockNumber; missingBlockNum++) {
-					try {
-						const missingBlockHash = await rcApi.rpc.chain.getBlockHash(missingBlockNum);
-
-						// Process events for the missing block
-						const events = await rcApi.query.system.events.at(missingBlockHash);
-						const eventsOfInterest = events
-							.map((e) => e.event)
-							.filter((e) => {
-								const ahClientEvents = (e: IEventData) => e.section == 'stakingAhClient';
-								const sessionEvents = (e: IEventData) => e.section == 'session' || e.section == 'historical';
-								return ahClientEvents(e.data) || sessionEvents(e.data);
-							});
-
-						// Extract timestamp for this block
-						const timestamp = await extractBlockTimestamp(rcApi, missingBlockHash);
-						const timestampStr = timestamp ? `[${timestamp}]` : '';
-
-						// Add events to the events panel
-						eventsOfInterest.forEach(e => {
-							const eventEntry: EventEntry = {
-								chain: 'RC',
-								blockNumber: missingBlockNum,
-								blockHash: missingBlockHash.toString(),
-								event: `[RC #${missingBlockNum}]${timestampStr} ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`,
-								timestamp
-							};
-							addEvents([eventEntry]);
-						});
-					} catch (err) {
-						logToConsole(`RC: Error backfilling block #${missingBlockNum}: ${err instanceof Error ? err.message : String(err)}`);
-					}
+	subscribeFinalizedHeadsWithGapDetection(
+		rcApi,
+		async (header, blockHash, isBackfill) => {
+			try {
+				if (!isBackfill) {
+					rcLastUpdate = Date.now();
 				}
+				const blockNumber = header.number.toNumber();
 
-				logToConsole(`RC: Backfill complete. Processed ${gap} block(s).`);
-			}
+				// Process events for this block
+				const events = await rcApi.query.system.events.at(blockHash);
+				const eventsOfInterest = events
+					.map((e) => e.event)
+					.filter((e) => {
+						const ahClientEvents = (e: IEventData) => e.section == 'stakingAhClient';
+						const sessionEvents = (e: IEventData) => e.section == 'session' || e.section == 'historical';
+						return ahClientEvents(e.data) || sessionEvents(e.data);
+					});
 
-			const index = await rcApi.query.session.currentIndex();
-			const hasQueuedInSession = await rcApi.query.session.queuedChanged();
-			// whether there is a validator set queued in ah-client. for this we need to display only the id and the length of the set.
-			// @ts-ignore
-			const hasQueuedInClientTemp = await rcApi.query.stakingAhClient.validatorSet() as Option<[u32, Vec<AccountId>]>;
-			let hasQueuedInClient = 'none'
-			if (hasQueuedInClientTemp.isSome) {
-				let [id, validators] = hasQueuedInClientTemp.unwrap();
-				hasQueuedInClient = `id=${id}, len=${validators.length}`
-			}
-			// the range of historical session data that we have in the RC.
-			const historicalRange = await rcApi.query.historical.storedRange();
+				// Extract timestamp for this block
+				const timestamp = await extractBlockTimestamp(rcApi, blockHash);
+				const timestampStr = timestamp ? `[${timestamp}]` : '';
 
-			// whether we have already passed a new validator set to session, and therefore in the next session rotation we want to pass this id to AH.
-			const hasNextActiveId = await rcApi.query.stakingAhClient.nextSessionChangesValidators();
-			// Operating mode of the client.
-			const mode = await rcApi.query.stakingAhClient.mode();
-			// pending validator points
-			const validatorPoints = (await rcApi.query.stakingAhClient.validatorPoints.keys()).length
-
-			// staking force era in RC
-			const forceEra = await rcApi.query.staking.forceEra();
-			const electionPhase = await rcApi.query.electionProviderMultiPhase.currentPhase();
-
-			// parachain configs
-			const configuration = await rcApi.query.configuration.activeConfig();
-			// @ts-ignore
-			const maxDownwardMessageSize = await configuration.maxDownwardMessageSize;
-			// @ts-ignore
-			const maxUpwardMessageSize = await configuration.maxUpwardMessageSize;
-
-			// Events
-			const events = await rcApi.query.system.events();
-			const eventsOfInterest = events
-				.map((e) => e.event)
-				.filter((e) => {
-					const ahClientEvents = (e: IEventData) => e.section == 'stakingAhClient';
-					const sessionEvents = (e: IEventData) => e.section == 'session' || e.section == 'historical';
-					return ahClientEvents(e.data) || sessionEvents(e.data);
+				// Add events to the events panel
+				eventsOfInterest.forEach(e => {
+					const eventEntry: EventEntry = {
+						chain: 'RC',
+						blockNumber,
+						blockHash: blockHash.toString(),
+						event: `[RC #${blockNumber}]${timestampStr} ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`,
+						timestamp
+					};
+					addEvents([eventEntry]);
 				});
 
-			// Add events to the events panel
-			const timestamp = await extractBlockTimestamp(rcApi, header.hash);
-			const timestampStr = timestamp ? `[${timestamp}]` : '';
+				// Only update UI boxes for current blocks (not backfilled ones)
+				if (!isBackfill) {
+					const index = await rcApi.query.session.currentIndex();
+					const hasQueuedInSession = await rcApi.query.session.queuedChanged();
+					// whether there is a validator set queued in ah-client. for this we need to display only the id and the length of the set.
+					// @ts-ignore
+					const hasQueuedInClientTemp = await rcApi.query.stakingAhClient.validatorSet() as Option<[u32, Vec<AccountId>]>;
+					let hasQueuedInClient = 'none'
+					if (hasQueuedInClientTemp.isSome) {
+						let [id, validators] = hasQueuedInClientTemp.unwrap();
+						hasQueuedInClient = `id=${id}, len=${validators.length}`
+					}
+					// the range of historical session data that we have in the RC.
+					const historicalRange = await rcApi.query.historical.storedRange();
 
-			eventsOfInterest.forEach(e => {
-				const eventEntry: EventEntry = {
-					chain: 'RC',
-					blockNumber: header.number.toNumber(),
-					blockHash: header.hash.toString(),
-					event: `[RC #${header.number}]${timestampStr} ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`,
-					timestamp
-				};
-				addEvents([eventEntry]);
-			});
+					// whether we have already passed a new validator set to session, and therefore in the next session rotation we want to pass this id to AH.
+					const hasNextActiveId = await rcApi.query.stakingAhClient.nextSessionChangesValidators();
+					// Operating mode of the client.
+					const mode = await rcApi.query.stakingAhClient.mode();
+					// pending validator points
+					const validatorPoints = (await rcApi.query.stakingAhClient.validatorPoints.keys()).length
 
+					// staking force era in RC
+					const forceEra = await rcApi.query.staking.forceEra();
+					const electionPhase = await rcApi.query.electionProviderMultiPhase.currentPhase();
 
-			// Update RC box
-			const rcContent = [
-				`{bold}{cyan-fg}Finalized Block:{/} #${header.number}`,
-				'',
-				'{bold}{yellow-fg}Session Info:{/}',
-				`  Current Index: ${index}`,
-				`  Queued in Session: ${hasQueuedInSession}`,
-				`  Historical Range: ${historicalRange} (${(historicalRange.unwrap()[1] || 0).toNumber() - (historicalRange.unwrap()[0] || 0).toNumber()} sessions)`,
-				'',
-				'{bold}{yellow-fg}Staking AH Client:{/}',
-				`  Queued in Client: ${hasQueuedInClient}`,
-				`  Next Active ID: ${hasNextActiveId}`,
-				`  Mode: ${mode}`,
-				`  Validator Points: ${validatorPoints}`,
-				'',
-				'{bold}{yellow-fg}Staking/Elections:{/}',
-				`  Force Era: ${forceEra}`,
-				`  Election Phase: ${electionPhase}`,
-				'',
-				'{bold}{yellow-fg}Parachain Config:{/}',
-				`  Max Downward Message Size: ${maxDownwardMessageSize}`,
-				`  Max Upward Message Size: ${maxUpwardMessageSize}`,
-			];
+					// parachain configs
+					const configuration = await rcApi.query.configuration.activeConfig();
+					// @ts-ignore
+					const maxDownwardMessageSize = await configuration.maxDownwardMessageSize;
+					// @ts-ignore
+					const maxUpwardMessageSize = await configuration.maxUpwardMessageSize;
 
-			rcBox.setContent(rcContent.join('\n'));
-			screen.render();
+					// Update RC box
+					const rcContent = [
+						`{bold}{cyan-fg}Finalized Block:{/} #${header.number}`,
+						'',
+						'{bold}{yellow-fg}Session Info:{/}',
+						`  Current Index: ${index}`,
+						`  Queued in Session: ${hasQueuedInSession}`,
+						`  Historical Range: ${historicalRange} (${(historicalRange.unwrap()[1] || 0).toNumber() - (historicalRange.unwrap()[0] || 0).toNumber()} sessions)`,
+						'',
+						'{bold}{yellow-fg}Staking AH Client:{/}',
+						`  Queued in Client: ${hasQueuedInClient}`,
+						`  Next Active ID: ${hasNextActiveId}`,
+						`  Mode: ${mode}`,
+						`  Validator Points: ${validatorPoints}`,
+						'',
+						'{bold}{yellow-fg}Staking/Elections:{/}',
+						`  Force Era: ${forceEra}`,
+						`  Election Phase: ${electionPhase}`,
+						'',
+						'{bold}{yellow-fg}Parachain Config:{/}',
+						`  Max Downward Message Size: ${maxDownwardMessageSize}`,
+						`  Max Upward Message Size: ${maxUpwardMessageSize}`,
+					];
 
-			// Update tracking variable
-			rcLastBlockNumber = blockNumber;
-		} catch (err) {
-			const errorMsg = err instanceof Error ? err.message : String(err);
-			const stackTrace = err instanceof Error && err.stack ? err.stack : '';
-			rcBox.setContent(`Error: ${errorMsg}`);
-			logToConsole(`RC Error: ${errorMsg}${stackTrace ? '\n' + stackTrace : ''}`);
-			screen.render();
+					rcBox.setContent(rcContent.join('\n'));
+					screen.render();
+				}
+			} catch (err) {
+				const errorMsg = err instanceof Error ? err.message : String(err);
+				const stackTrace = err instanceof Error && err.stack ? err.stack : '';
+				rcBox.setContent(`Error: ${errorMsg}`);
+				logToConsole(`RC Error: ${errorMsg}${stackTrace ? '\n' + stackTrace : ''}`);
+				screen.render();
+			}
+		},
+		(lastBlockNumber, currentBlockNumber, gap) => {
+			logToConsole(`RC: Gap detected: ${gap} block(s) between #${lastBlockNumber} and #${currentBlockNumber}. Backfilling...`);
+		},
+		(blockNumber, error) => {
+			logToConsole(`RC: Error backfilling block #${blockNumber}: ${error.message}`);
 		}
-	});
+	);
 
 	// Subscribe to AH updates
-	ahApi.rpc.chain.subscribeFinalizedHeads(async (header) => {
-		try {
-			ahLastUpdate = Date.now();
-			const blockNumber = header.number.toNumber();
-
-			// Check for gaps in block numbers
-			if (ahLastBlockNumber !== null && blockNumber > ahLastBlockNumber + 1) {
-				// Gap detected! Backfill missing blocks
-				const gap = blockNumber - ahLastBlockNumber - 1;
-				logToConsole(`AH: Gap detected: ${gap} block(s) between #${ahLastBlockNumber} and #${blockNumber}. Backfilling...`);
-
-				// Fetch and process missing blocks
-				for (let missingBlockNum = ahLastBlockNumber + 1; missingBlockNum < blockNumber; missingBlockNum++) {
-					try {
-						const missingBlockHash = await ahApi.rpc.chain.getBlockHash(missingBlockNum);
-
-						// Get weight for the missing block
-						const weight = await ahApi.query.system.blockWeight.at(missingBlockHash);
-
-						// Process events for the missing block
-						const events = await ahApi.query.system.events.at(missingBlockHash);
-						const eventsOfInterest = events
-							.map((e) => e.event)
-							.filter((e) => {
-								const election = (e: IEventData) => e.section == 'multiBlockElection' || e.section == 'multiBlockElectionVerifier' || e.section == 'multiBlockElectionSigned' || e.section == 'multiBlockElectionUnsigned';
-								const rcClient = (e: IEventData) => e.section == 'stakingRcClient';
-								const staking = (e: IEventData) => e.section == 'staking' && (e.method == 'EraPaid' || e.method == 'SessionRotated' || e.method == 'PagedElectionProceeded');
-								return election(e.data) || rcClient(e.data) || staking(e.data);
-							});
-
-						// Extract timestamp for this block
-						const timestamp = await extractBlockTimestamp(ahApi, missingBlockHash);
-						const timestampStr = timestamp ? `[${timestamp}]` : '';
-
-						// Add events to the events panel
-						eventsOfInterest.forEach(e => {
-							const eventEntry: EventEntry = {
-								chain: 'AH',
-								blockNumber: missingBlockNum,
-								blockHash: missingBlockHash.toString(),
-								event: `[AH #${missingBlockNum}]${timestampStr}[${formatWeight(weight)}] ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`,
-								timestamp
-							};
-							addEvents([eventEntry]);
-						});
-					} catch (err) {
-						logToConsole(`AH: Error backfilling block #${missingBlockNum}: ${err instanceof Error ? err.message : String(err)}`);
-					}
+	subscribeFinalizedHeadsWithGapDetection(
+		ahApi,
+		async (header, blockHash, isBackfill) => {
+			try {
+				if (!isBackfill) {
+					ahLastUpdate = Date.now();
 				}
+				const blockNumber = header.number.toNumber();
 
-				logToConsole(`AH: Backfill complete. Processed ${gap} block(s).`);
-			}
+				// Get weight for this block
+				const weight = await ahApi.query.system.blockWeight.at(blockHash);
 
-			const weight = await ahApi.query.system.blockWeight();
-			// the current planned era
-			const currentEra = (await ahApi.query.staking.currentEra()).unwrapOrDefault();
-			// the active era
-			const activeEra = (await ahApi.query.staking.activeEra()).unwrapOrDefault();
-			const activeEraDuration = Duration.fromMillis(new Date().getTime() - (activeEra.start.unwrapOrDefault().toNumber())).toFormat("hh:mm:ss");
-			// the starting index of the active era
-			const bondedEras = await ahApi.query.staking.bondedEras();
-			const firstAndLastBondedEra = bondedEras.length > 0 ? [bondedEras[0], bondedEras[bondedEras.length - 1]] : [];
-			const activeEraStartSessionIndex = bondedEras.find(([e, i]) => e.eq(activeEra.index))?.[1].toNumber() || 0;
-			// counter for stakers
-			const validatorCandidates = await ahApi.query.staking.counterForValidators();
-			const nominatorCandidates = await ahApi.query.staking.counterForNominators();
-			const maxValidatorsCount = await ahApi.query.staking.maxValidatorsCount();
-			const maxNominatorsCount = await ahApi.query.staking.maxNominatorsCount();
-			const validatorCount = await ahApi.query.staking.validatorCount();
+				// Process events for this block
+				const events = await ahApi.query.system.events.at(blockHash);
+				const eventsOfInterest = events
+					.map((e) => e.event)
+					.filter((e) => {
+						const election = (e: IEventData) => e.section == 'multiBlockElection' || e.section == 'multiBlockElectionVerifier' || e.section == 'multiBlockElectionSigned' || e.section == 'multiBlockElectionUnsigned';
+						const rcClient = (e: IEventData) => e.section == 'stakingRcClient';
+						const staking = (e: IEventData) => e.section == 'staking' && (e.method == 'EraPaid' || e.method == 'SessionRotated' || e.method == 'PagedElectionProceeded');
+						return election(e.data) || rcClient(e.data) || staking(e.data);
+					});
 
-			// Eras that have not been pruned yet
-			const unprunedEras = ahApi.query.staking.eraPruningState ? (await ahApi.query.staking.eraPruningState.entries()).map(([k, v]) => k.args[0]).sort() : 'unimplemented!';
+				// Extract timestamp for this block
+				const timestamp = await extractBlockTimestamp(ahApi, blockHash);
+				const timestampStr = timestamp ? `[${timestamp}]` : '';
 
-			// stake limits for stakers
-			const minNominatorBond = await ahApi.query.staking.minNominatorBond();
-			const minValidatorBond = await ahApi.query.staking.minValidatorBond();
-			const minNominatorActiveStake = await ahApi.query.staking.minimumActiveStake();
-
-			const forcing = await await ahApi.query.staking.forceEra();
-
-			// the basic state of the election provider
-			const phase = await ahApi.query.multiBlockElection.currentPhase();
-			const round = await ahApi.query.multiBlockElection.round();
-			const snapshotRange = (await ahApi.query.multiBlockElection.pagedVoterSnapshotHash.entries()).map(([k, v]) => Number(k.args[1].toHuman())).sort();
-			const queuedScore = await ahApi.query.multiBlockElectionVerifier.queuedSolutionScore(round);
-			const signedSubmissions = await ahApi.query.multiBlockElectionSigned.sortedScores(round);
-
-			// The client
-			const lastSessionReportEndIndex = await ahApi.query.stakingRcClient.lastSessionReportEndingIndex() as Option<BlockNumber>;
-			const lastSessionIndex = lastSessionReportEndIndex.isSome ? lastSessionReportEndIndex.unwrapOrDefault().toNumber() + 1 : 0;
-
-			// bags-list
-			const allNodes = await ahApi.query.voterList.counterForListNodes();
-			const lock = await ahApi.query.voterList.lock();
-
-			// Events
-			const events = await ahApi.query.system.events();
-			const eventsOfInterest = events
-				.map((e) => e.event)
-				.filter((e) => {
-					const election = (e: IEventData) => e.section == 'multiBlockElection' || e.section == 'multiBlockElectionVerifier' || e.section == 'multiBlockElectionSigned' || e.section == 'multiBlockElectionUnsigned';
-					const rcClient = (e: IEventData) => e.section == 'stakingRcClient';
-					const staking = (e: IEventData) => e.section == 'staking' && (e.method == 'EraPaid' || e.method == 'SessionRotated' || e.method == 'PagedElectionProceeded');
-					return election(e.data) || rcClient(e.data) || staking(e.data);
+				// Add events to the events panel
+				eventsOfInterest.forEach(e => {
+					const eventEntry: EventEntry = {
+						chain: 'AH',
+						blockNumber,
+						blockHash: blockHash.toString(),
+						event: `[AH #${blockNumber}]${timestampStr}[${formatWeight(weight)}] ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`,
+						timestamp
+					};
+					addEvents([eventEntry]);
 				});
 
-			// Add events to the events panel
-			const timestamp = await extractBlockTimestamp(ahApi, header.hash);
-			const timestampStr = timestamp ? `[${timestamp}]` : '';
+				// Only update UI boxes for current blocks (not backfilled ones)
+				if (!isBackfill) {
+					// the current planned era
+					const currentEra = (await ahApi.query.staking.currentEra()).unwrapOrDefault();
+					// the active era
+					const activeEra = (await ahApi.query.staking.activeEra()).unwrapOrDefault();
+					const activeEraDuration = Duration.fromMillis(new Date().getTime() - (activeEra.start.unwrapOrDefault().toNumber())).toFormat("hh:mm:ss");
+					// the starting index of the active era
+					const bondedEras = await ahApi.query.staking.bondedEras();
+					const firstAndLastBondedEra = bondedEras.length > 0 ? [bondedEras[0], bondedEras[bondedEras.length - 1]] : [];
+					const activeEraStartSessionIndex = bondedEras.find(([e, i]) => e.eq(activeEra.index))?.[1].toNumber() || 0;
+					// counter for stakers
+					const validatorCandidates = await ahApi.query.staking.counterForValidators();
+					const nominatorCandidates = await ahApi.query.staking.counterForNominators();
+					const maxValidatorsCount = await ahApi.query.staking.maxValidatorsCount();
+					const maxNominatorsCount = await ahApi.query.staking.maxNominatorsCount();
+					const validatorCount = await ahApi.query.staking.validatorCount();
 
-			eventsOfInterest.forEach(e => {
-				const eventEntry: EventEntry = {
-					chain: 'AH',
-					blockNumber: header.number.toNumber(),
-					blockHash: header.hash.toString(),
-					event: `[AH #${header.number}]${timestampStr}[${formatWeight(weight)}] ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`,
-					timestamp
-				};
-				addEvents([eventEntry]);
-			});
+					// Eras that have not been pruned yet
+					const unprunedEras = ahApi.query.staking.eraPruningState ? (await ahApi.query.staking.eraPruningState.entries()).map(([k, v]) => k.args[0]).sort() : 'unimplemented!';
 
-			// Update AH box
-			const ahContent = [
-				`{bold}{magenta-fg}Finalized Block:{/} #${header.number}`,
-				'',
-				'{bold}{yellow-fg}Staking:{/}',
-				`  Current Era: ${currentEra}`,
-				`  Active Era: ${activeEra} (duration: ${activeEraDuration})`,
-				`  Active Era Start Session Index: ${activeEraStartSessionIndex}, Era-depth: ${(lastSessionIndex - activeEraStartSessionIndex)} sessions`,
-				`  Bonded Eras: [${firstAndLastBondedEra.map(([e, i]) => `(${e.toString()} @ ${i.toString()})`).join(', ')}]`,
-				`  Unpruned Eras: ${unprunedEras}`,
-				`  Forcing: ${forcing}`,
-				'{bold}{yellow-fg}Validators/Nominators:{/}',
-				`  Wanted Validators: ${validatorCount}`,
-				`  Validator Candidates: ${validatorCandidates} (max: ${maxValidatorsCount})`,
-				`  Nominator Candidates: ${nominatorCandidates} (max: ${maxNominatorsCount})`,
-				`  Min Nominator Bond: ${ahApi.createType('Balance', minNominatorBond).toHuman()} / Min Validator Bond: ${ahApi.createType('Balance', minValidatorBond).toHuman()} / Min Nominator Active Stake: ${ahApi.createType('Balance', minNominatorActiveStake).toHuman()}`,
-				'',
-				'{bold}{yellow-fg}RC Client:{/}',
-				`  Last Session Report: End=${lastSessionReportEndIndex}, Start=${lastSessionIndex}`,
-				'',
-				'{bold}{yellow-fg}Election:{/}',
-				`  Phase: ${phase}`,
-				`  Round: ${round}`,
-				`  Snapshot Range: ${snapshotRange}`,
-				`  Queued Score: ${queuedScore.toString()}`,
-				`  Signed Submissions: ${signedSubmissions.toString()}`,
-				'',
-				'{bold}{yellow-fg}Bags List:{/}',
-				`  All Nodes: ${allNodes}`,
-				`  Lock: ${lock.toHex()}`,
-			];
+					// stake limits for stakers
+					const minNominatorBond = await ahApi.query.staking.minNominatorBond();
+					const minValidatorBond = await ahApi.query.staking.minValidatorBond();
+					const minNominatorActiveStake = await ahApi.query.staking.minimumActiveStake();
 
-			ahBox.setContent(ahContent.join('\n'));
-			screen.render();
+					const forcing = await await ahApi.query.staking.forceEra();
 
-			// Update tracking variable
-			ahLastBlockNumber = blockNumber;
-		} catch (err) {
-			const errorMsg = err instanceof Error ? err.message : String(err);
-			const stackTrace = err instanceof Error && err.stack ? err.stack : '';
-			ahBox.setContent(`Error: ${errorMsg}`);
-			logToConsole(`AH Error: ${errorMsg}${stackTrace ? '\n' + stackTrace : ''}`);
-			screen.render();
+					// the basic state of the election provider
+					const phase = await ahApi.query.multiBlockElection.currentPhase();
+					const round = await ahApi.query.multiBlockElection.round();
+					const snapshotRange = (await ahApi.query.multiBlockElection.pagedVoterSnapshotHash.entries()).map(([k, v]) => Number(k.args[1].toHuman())).sort();
+					const queuedScore = await ahApi.query.multiBlockElectionVerifier.queuedSolutionScore(round);
+					const signedSubmissions = await ahApi.query.multiBlockElectionSigned.sortedScores(round);
+
+					// The client
+					const lastSessionReportEndIndex = await ahApi.query.stakingRcClient.lastSessionReportEndingIndex() as Option<BlockNumber>;
+					const lastSessionIndex = lastSessionReportEndIndex.isSome ? lastSessionReportEndIndex.unwrapOrDefault().toNumber() + 1 : 0;
+
+					// bags-list
+					const allNodes = await ahApi.query.voterList.counterForListNodes();
+					const lock = await ahApi.query.voterList.lock();
+
+					// Update AH box
+					const ahContent = [
+						`{bold}{magenta-fg}Finalized Block:{/} #${header.number}`,
+						'',
+						'{bold}{yellow-fg}Staking:{/}',
+						`  Current Era: ${currentEra}`,
+						`  Active Era: ${activeEra} (duration: ${activeEraDuration})`,
+						`  Active Era Start Session Index: ${activeEraStartSessionIndex}, Era-depth: ${(lastSessionIndex - activeEraStartSessionIndex)} sessions`,
+						`  Bonded Eras: [${firstAndLastBondedEra.map(([e, i]) => `(${e.toString()} @ ${i.toString()})`).join(', ')}]`,
+						`  Unpruned Eras: ${unprunedEras}`,
+						`  Forcing: ${forcing}`,
+						'{bold}{yellow-fg}Validators/Nominators:{/}',
+						`  Wanted Validators: ${validatorCount}`,
+						`  Validator Candidates: ${validatorCandidates} (max: ${maxValidatorsCount})`,
+						`  Nominator Candidates: ${nominatorCandidates} (max: ${maxNominatorsCount})`,
+						`  Min Nominator Bond: ${ahApi.createType('Balance', minNominatorBond).toHuman()} / Min Validator Bond: ${ahApi.createType('Balance', minValidatorBond).toHuman()} / Min Nominator Active Stake: ${ahApi.createType('Balance', minNominatorActiveStake).toHuman()}`,
+						'',
+						'{bold}{yellow-fg}RC Client:{/}',
+						`  Last Session Report: End=${lastSessionReportEndIndex}, Start=${lastSessionIndex}`,
+						'',
+						'{bold}{yellow-fg}Election:{/}',
+						`  Phase: ${phase}`,
+						`  Round: ${round}`,
+						`  Snapshot Range: ${snapshotRange}`,
+						`  Queued Score: ${queuedScore.toString()}`,
+						`  Signed Submissions: ${signedSubmissions.toString()}`,
+						'',
+						'{bold}{yellow-fg}Bags List:{/}',
+						`  All Nodes: ${allNodes}`,
+						`  Lock: ${lock.toHex()}`,
+					];
+
+					ahBox.setContent(ahContent.join('\n'));
+					screen.render();
+				}
+			} catch (err) {
+				const errorMsg = err instanceof Error ? err.message : String(err);
+				const stackTrace = err instanceof Error && err.stack ? err.stack : '';
+				ahBox.setContent(`Error: ${errorMsg}`);
+				logToConsole(`AH Error: ${errorMsg}${stackTrace ? '\n' + stackTrace : ''}`);
+				screen.render();
+			}
+		},
+		(lastBlockNumber, currentBlockNumber, gap) => {
+			logToConsole(`AH: Gap detected: ${gap} block(s) between #${lastBlockNumber} and #${currentBlockNumber}. Backfilling...`);
+		},
+		(blockNumber, error) => {
+			logToConsole(`AH: Error backfilling block #${blockNumber}: ${error.message}`);
 		}
-	});
+	);
 
 	// Initial render
 	screen.render();
