@@ -349,6 +349,10 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 	let rcLastUpdate: number = Date.now();
 	let ahLastUpdate: number = Date.now();
 
+	// Track last processed block numbers for gap detection
+	let rcLastBlockNumber: number | null = null;
+	let ahLastBlockNumber: number | null = null;
+
 	// Console logs storage
 	const consoleLogs: string[] = [];
 
@@ -720,6 +724,52 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 	rcApi.rpc.chain.subscribeFinalizedHeads(async (header) => {
 		try {
 			rcLastUpdate = Date.now();
+			const blockNumber = header.number.toNumber();
+
+			// Check for gaps in block numbers
+			if (rcLastBlockNumber !== null && blockNumber > rcLastBlockNumber + 1) {
+				// Gap detected! Backfill missing blocks
+				const gap = blockNumber - rcLastBlockNumber - 1;
+				logToConsole(`RC: Gap detected: ${gap} block(s) between #${rcLastBlockNumber} and #${blockNumber}. Backfilling...`);
+
+				// Fetch and process missing blocks
+				for (let missingBlockNum = rcLastBlockNumber + 1; missingBlockNum < blockNumber; missingBlockNum++) {
+					try {
+						const missingBlockHash = await rcApi.rpc.chain.getBlockHash(missingBlockNum);
+
+						// Process events for the missing block
+						const events = await rcApi.query.system.events.at(missingBlockHash);
+						const eventsOfInterest = events
+							.map((e) => e.event)
+							.filter((e) => {
+								const ahClientEvents = (e: IEventData) => e.section == 'stakingAhClient';
+								const sessionEvents = (e: IEventData) => e.section == 'session' || e.section == 'historical';
+								return ahClientEvents(e.data) || sessionEvents(e.data);
+							});
+
+						// Extract timestamp for this block
+						const timestamp = await extractBlockTimestamp(rcApi, missingBlockHash);
+						const timestampStr = timestamp ? `[${timestamp}]` : '';
+
+						// Add events to the events panel
+						eventsOfInterest.forEach(e => {
+							const eventEntry: EventEntry = {
+								chain: 'RC',
+								blockNumber: missingBlockNum,
+								blockHash: missingBlockHash.toString(),
+								event: `[RC #${missingBlockNum}]${timestampStr} ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`,
+								timestamp
+							};
+							addEvents([eventEntry]);
+						});
+					} catch (err) {
+						logToConsole(`RC: Error backfilling block #${missingBlockNum}: ${err instanceof Error ? err.message : String(err)}`);
+					}
+				}
+
+				logToConsole(`RC: Backfill complete. Processed ${gap} block(s).`);
+			}
+
 			const index = await rcApi.query.session.currentIndex();
 			const hasQueuedInSession = await rcApi.query.session.queuedChanged();
 			// whether there is a validator set queued in ah-client. for this we need to display only the id and the length of the set.
@@ -803,6 +853,9 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 
 			rcBox.setContent(rcContent.join('\n'));
 			screen.render();
+
+			// Update tracking variable
+			rcLastBlockNumber = blockNumber;
 		} catch (err) {
 			const errorMsg = err instanceof Error ? err.message : String(err);
 			const stackTrace = err instanceof Error && err.stack ? err.stack : '';
@@ -816,6 +869,56 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 	ahApi.rpc.chain.subscribeFinalizedHeads(async (header) => {
 		try {
 			ahLastUpdate = Date.now();
+			const blockNumber = header.number.toNumber();
+
+			// Check for gaps in block numbers
+			if (ahLastBlockNumber !== null && blockNumber > ahLastBlockNumber + 1) {
+				// Gap detected! Backfill missing blocks
+				const gap = blockNumber - ahLastBlockNumber - 1;
+				logToConsole(`AH: Gap detected: ${gap} block(s) between #${ahLastBlockNumber} and #${blockNumber}. Backfilling...`);
+
+				// Fetch and process missing blocks
+				for (let missingBlockNum = ahLastBlockNumber + 1; missingBlockNum < blockNumber; missingBlockNum++) {
+					try {
+						const missingBlockHash = await ahApi.rpc.chain.getBlockHash(missingBlockNum);
+
+						// Get weight for the missing block
+						const weight = await ahApi.query.system.blockWeight.at(missingBlockHash);
+
+						// Process events for the missing block
+						const events = await ahApi.query.system.events.at(missingBlockHash);
+						const eventsOfInterest = events
+							.map((e) => e.event)
+							.filter((e) => {
+								const election = (e: IEventData) => e.section == 'multiBlockElection' || e.section == 'multiBlockElectionVerifier' || e.section == 'multiBlockElectionSigned' || e.section == 'multiBlockElectionUnsigned';
+								const rcClient = (e: IEventData) => e.section == 'stakingRcClient';
+								const staking = (e: IEventData) => e.section == 'staking' && (e.method == 'EraPaid' || e.method == 'SessionRotated' || e.method == 'PagedElectionProceeded');
+								return election(e.data) || rcClient(e.data) || staking(e.data);
+							});
+
+						// Extract timestamp for this block
+						const timestamp = await extractBlockTimestamp(ahApi, missingBlockHash);
+						const timestampStr = timestamp ? `[${timestamp}]` : '';
+
+						// Add events to the events panel
+						eventsOfInterest.forEach(e => {
+							const eventEntry: EventEntry = {
+								chain: 'AH',
+								blockNumber: missingBlockNum,
+								blockHash: missingBlockHash.toString(),
+								event: `[AH #${missingBlockNum}]${timestampStr}[${formatWeight(weight)}] ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`,
+								timestamp
+							};
+							addEvents([eventEntry]);
+						});
+					} catch (err) {
+						logToConsole(`AH: Error backfilling block #${missingBlockNum}: ${err instanceof Error ? err.message : String(err)}`);
+					}
+				}
+
+				logToConsole(`AH: Backfill complete. Processed ${gap} block(s).`);
+			}
+
 			const weight = await ahApi.query.system.blockWeight();
 			// the current planned era
 			const currentEra = (await ahApi.query.staking.currentEra()).unwrapOrDefault();
@@ -918,6 +1021,9 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 
 			ahBox.setContent(ahContent.join('\n'));
 			screen.render();
+
+			// Update tracking variable
+			ahLastBlockNumber = blockNumber;
 		} catch (err) {
 			const errorMsg = err instanceof Error ? err.message : String(err);
 			const stackTrace = err instanceof Error && err.stack ? err.stack : '';
