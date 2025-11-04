@@ -13,7 +13,10 @@ interface EventEntry {
 	blockNumber: number;
 	blockHash: string;
 	event: string;
+	timestamp?: string;
 }
+
+const HISTORY: number = 600 * 4
 
 // Network configurations
 export const NETWORK_CONFIGS = {
@@ -68,6 +71,36 @@ function formatArgs(args: any[]): string {
 		}
 		return String(arg);
 	}).join(' ');
+}
+
+/**
+ * Extracts timestamp from a block's extrinsics and returns it in compact UTC format
+ * @param api The API instance to use for decoding
+ * @param block The block to extract timestamp from
+ * @returns Formatted timestamp string (HH:MM:SS) or empty string if not found
+ */
+async function extractBlockTimestamp(api: ApiPromise, blockHash: any): Promise<string> {
+	try {
+		const block = await api.rpc.chain.getBlock(blockHash);
+
+		// Find the timestamp extrinsic (usually the first inherent)
+		for (const ext of block.block.extrinsics) {
+			if (ext.method.section === 'timestamp' && ext.method.method === 'set') {
+				const timestamp = ext.method.args[0].toString();
+				const date = new Date(parseInt(timestamp));
+
+				// Format as compact UTC: HH:MM:SS
+				const hours = date.getUTCHours().toString().padStart(2, '0');
+				const minutes = date.getUTCMinutes().toString().padStart(2, '0');
+				const seconds = date.getUTCSeconds().toString().padStart(2, '0');
+
+				return `${hours}:${minutes}:${seconds}`;
+			}
+		}
+		return '';
+	} catch (err) {
+		return '';
+	}
 }
 
 export async function runCommandCenter(rcUri: string, ahUri: string): Promise<void> {
@@ -298,7 +331,7 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 		left: 0,
 		width: '100%',
 		height: 1,
-		content: ' Press q to quit | ↑↓ to scroll | Tab to switch panels | h: load 600 blocks | H: load 14400 blocks ',
+		content: ` Press q to quit | ↑↓ to scroll | Tab to switch panels | h: load ${HISTORY} blocks | H: load 14400 blocks `,
 		style: {
 			fg: 'black',
 			bg: 'white'
@@ -396,7 +429,7 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 		const blockInfo = `Last scraped - ${rcBlockInfo}, ${ahBlockInfo}`;
 
 		if (parts.length === 0) {
-			statusBar.setContent(` ${blockInfo} | Press q to quit | ↑↓←→ to scroll | Tab to switch panels | h: load 600 blocks | H: load 14400 blocks | Hold Shift+mouse: select text `);
+			statusBar.setContent(` ${blockInfo} | Press q to quit | ↑↓←→ to scroll | Tab to switch panels | h: load ${HISTORY} blocks | H: load 14400 blocks | Hold Shift+mouse: select text `);
 		} else {
 			statusBar.setContent(` ${parts.join(' | ')} | ${blockInfo} | Press q to quit `);
 		}
@@ -479,6 +512,10 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 							return ahClientEvents(e.data) || sessionEvents(e.data);
 						});
 
+					// Extract timestamp for this block
+					const timestamp = await extractBlockTimestamp(rcApi, rcBlockHash);
+					const timestampStr = timestamp ? `[${timestamp}]` : '';
+
 					// Add events immediately as we find them
 					const newEvents: EventEntry[] = [];
 					relevantEvents.forEach(e => {
@@ -486,7 +523,8 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 							chain: 'RC',
 							blockNumber,
 							blockHash: rcBlockHash.toString(),
-							event: `[RC #${blockNumber}] ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`
+							event: `[RC #${blockNumber}]${timestampStr} ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`,
+							timestamp
 						};
 						rcHistoricalEvents.push(eventEntry);
 						newEvents.push(eventEntry);
@@ -553,6 +591,10 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 							return election(e.data) || rcClient(e.data) || staking(e.data);
 						});
 
+					// Extract timestamp for this block
+					const timestamp = await extractBlockTimestamp(ahApi, ahBlockHash);
+					const timestampStr = timestamp ? `[${timestamp}]` : '';
+
 					// Add events immediately as we find them
 					const newEvents: EventEntry[] = [];
 					relevantEvents.forEach(e => {
@@ -560,7 +602,8 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 							chain: 'AH',
 							blockNumber,
 							blockHash: ahBlockHash.toString(),
-							event: `[AH #${blockNumber}][${formatWeight(weight)}] ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`
+							event: `[AH #${blockNumber}]${timestampStr}[${formatWeight(weight)}] ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`,
+							timestamp
 						};
 						ahHistoricalEvents.push(eventEntry);
 						newEvents.push(eventEntry);
@@ -626,11 +669,7 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 	});
 
 	screen.key(['h'], () => {
-		loadHistoricalEvents(600);
-	});
-
-	screen.key(['H'], () => {
-		loadHistoricalEvents(14400);
+		loadHistoricalEvents(HISTORY);
 	});
 
 	screen.key(['tab'], () => {
@@ -723,12 +762,16 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 				});
 
 			// Add events to the events panel
+			const timestamp = await extractBlockTimestamp(rcApi, header.hash);
+			const timestampStr = timestamp ? `[${timestamp}]` : '';
+
 			eventsOfInterest.forEach(e => {
 				const eventEntry: EventEntry = {
 					chain: 'RC',
 					blockNumber: header.number.toNumber(),
 					blockHash: header.hash.toString(),
-					event: `[RC #${header.number}] ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`
+					event: `[RC #${header.number}]${timestampStr} ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`,
+					timestamp
 				};
 				addEvents([eventEntry]);
 			});
@@ -803,7 +846,7 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 			// the basic state of the election provider
 			const phase = await ahApi.query.multiBlockElection.currentPhase();
 			const round = await ahApi.query.multiBlockElection.round();
-			const snapshotRange = (await ahApi.query.multiBlockElection.pagedVoterSnapshotHash.entries()).map(([k, v]) => k.args[1]).sort();
+			const snapshotRange = (await ahApi.query.multiBlockElection.pagedVoterSnapshotHash.entries()).map(([k, v]) => Number(k.args[1].toHuman())).sort();
 			const queuedScore = await ahApi.query.multiBlockElectionVerifier.queuedSolutionScore(round);
 			const signedSubmissions = await ahApi.query.multiBlockElectionSigned.sortedScores(round);
 
@@ -827,12 +870,16 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 				});
 
 			// Add events to the events panel
+			const timestamp = await extractBlockTimestamp(ahApi, header.hash);
+			const timestampStr = timestamp ? `[${timestamp}]` : '';
+
 			eventsOfInterest.forEach(e => {
 				const eventEntry: EventEntry = {
 					chain: 'AH',
 					blockNumber: header.number.toNumber(),
 					blockHash: header.hash.toString(),
-					event: `[AH #${header.number}][${formatWeight(weight)}] ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`
+					event: `[AH #${header.number}]${timestampStr}[${formatWeight(weight)}] ${e.section.toString()}::${e.method.toString()}(${e.data.toString()})`,
+					timestamp
 				};
 				addEvents([eventEntry]);
 			});
@@ -866,7 +913,7 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 				'',
 				'{bold}{yellow-fg}Bags List:{/}',
 				`  All Nodes: ${allNodes}`,
-				`  Lock: ${lock.toU8a()}`,
+				`  Lock: ${lock.toHex()}`,
 			];
 
 			ahBox.setContent(ahContent.join('\n'));
@@ -889,10 +936,9 @@ export async function runCommandCenter(rcUri: string, ahUri: string): Promise<vo
 	// Add initial console message
 	logToConsole('AHM Command Center started. Logs will appear here.');
 
-	// Load initial 600 blocks of history
 	setTimeout(() => {
-		logToConsole('Loading initial 600 blocks of historical events...');
-		loadHistoricalEvents(600);
+		logToConsole(`Loading initial ${HISTORY} blocks of historical events...`);
+		loadHistoricalEvents(HISTORY);
 	}, 100);
 
 	// Update timers every 100ms in the box labels
