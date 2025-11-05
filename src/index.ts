@@ -13,7 +13,8 @@ import {
 	stakingStatsHandler,
 	inFrontHandler,
 	commandCenterHandler,
-	blockTimeMonitorHandler
+	blockTimeMonitorHandler,
+	subscanEraMonitorHandler
 } from './handlers';
 import { NETWORK_CONFIGS } from './services';
 
@@ -247,6 +248,29 @@ async function main() {
 			{},
 			// @ts-ignore
 			blockTimeMonitorHandler
+		)
+		// @ts-ignore
+		.command(
+			['subscan-era'],
+			'Fetch Staking.EraPaid events from Kusama Asset Hub via Subscan and show timestamp differences',
+			// @ts-ignore
+			(yargs) => {
+				return yargs.options({
+					'api-key': {
+						description: 'Subscan API key (or use SUBSCAN_API_KEY env var)',
+						type: 'string',
+						demandOption: false
+					},
+					count: {
+						alias: 'c',
+						description: 'Number of events to fetch',
+						type: 'number',
+						demandOption: false,
+						default: 50
+					}
+				});
+			},
+			subscanEraMonitorHandler
 		)
 		.parse();
 }

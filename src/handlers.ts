@@ -10,6 +10,7 @@ import {
 	canPutInFrontOf,
 	runCommandCenter,
 	runBlockTimeMonitor,
+	runSubscanEraMonitor,
 	NETWORK_CONFIGS
 } from './services';
 import { binarySearchStorageChange, getAccountFromEnvOrArgElseAlice, getApi, getAtApi, sendAndAwaitInBlock, sendAndFinalize } from './helpers';
@@ -42,6 +43,9 @@ export interface HandlerArgs {
 	rcUri?: string;
 	ahUri?: string;
 	network?: string;
+
+	// Subscan Era Monitor specific args
+	apiKey?: string;
 }
 
 export async function inFrontHandler({ ws, target }: HandlerArgs): Promise<void> {
@@ -382,4 +386,15 @@ export async function playgroundHandler({ ws, seed, target }: HandlerArgs): Prom
 
 export async function blockTimeMonitorHandler({ ws }: HandlerArgs): Promise<void> {
 	await runBlockTimeMonitor(ws);
+}
+
+export async function subscanEraMonitorHandler({ apiKey, count }: HandlerArgs): Promise<void> {
+	const finalApiKey = apiKey || process.env['API'] || '';
+
+	if (!finalApiKey) {
+		throw new Error('API key is required. Provide via --api-key or API environment variable.\nGet one from: https://pro.subscan.io/');
+	}
+
+	const eventCount = count !== undefined ? count : 50;
+	await runSubscanEraMonitor(finalApiKey, eventCount);
 }

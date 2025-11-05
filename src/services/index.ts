@@ -214,3 +214,4 @@ export * from './reap_stash';
 export * from './state_trie_migration';
 export * from './command_center';
 export * from './block_time_monitor';
+export * from './subscan_era_monitor';
